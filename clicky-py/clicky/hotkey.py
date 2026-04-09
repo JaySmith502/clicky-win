@@ -114,6 +114,10 @@ class HotkeyMonitor(QObject):
     pressed = Signal()
     released = Signal()
     cancelled = Signal()
+    # Fired on any Escape keypress — used by the UI layer to dismiss the
+    # floating panel reliably, since Qt focus semantics for frameless
+    # Tool windows on Windows 11 don't guarantee keyPressEvent delivery.
+    escape_pressed = Signal()
 
     _VALID_BINDINGS: frozenset[str] = frozenset({"ctrl+alt", "right_ctrl"})
 
@@ -154,6 +158,16 @@ class HotkeyMonitor(QObject):
     # pynput callbacks (run on the listener's background thread)
     # ------------------------------------------------------------------
     def _on_press(self, key: keyboard.Key | keyboard.KeyCode | None) -> None:
+        # Escape is a special global signal for the UI layer (panel
+        # dismissal). Emit it on every fresh press regardless of hotkey
+        # state; auto-repeat is filtered below.
+        if key == keyboard.Key.esc:
+            # Track it in _held so the auto-repeat filter applies.
+            if "esc" not in self._held:
+                self._held.add("esc")
+                self._post_main("_emit_escape")
+            return
+
         name = _normalize_key(key)
         if name is None:
             return
@@ -182,6 +196,10 @@ class HotkeyMonitor(QObject):
         # CANCELLED — absorb further presses until everything is lifted.
 
     def _on_release(self, key: keyboard.Key | keyboard.KeyCode | None) -> None:
+        if key == keyboard.Key.esc:
+            self._held.discard("esc")
+            return
+
         name = _normalize_key(key)
         if name is None:
             return
@@ -261,3 +279,7 @@ class HotkeyMonitor(QObject):
     @Slot()
     def _emit_cancelled(self) -> None:
         self.cancelled.emit()
+
+    @Slot()
+    def _emit_escape(self) -> None:
+        self.escape_pressed.emit()

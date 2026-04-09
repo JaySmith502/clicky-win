@@ -1,26 +1,28 @@
 """Frameless dark panel for ClickyWin.
 
 Hosts all panel sub-views (waveform, transcript, response, banner, etc).
-Positioned near the system tray icon via show_near_tray(). Dismisses on
-Escape or click-outside-panel.
+Positioned near the system tray icon via show_near_tray(). Dismissal is
+handled by a global pynput mouse listener (click-outside → hide), since
+Qt focus semantics for frameless Tool windows on Windows 11 are
+unreliable. Escape-to-dismiss is provided by HotkeyMonitor via a signal
+wired up in ``clicky.app``.
 """
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, QObject, QPoint, QRect, Qt
+from pynput import mouse
+from PySide6.QtCore import QPoint, QRect, Qt, Signal, Slot
 from PySide6.QtGui import (
     QColor,
     QCursor,
-    QFocusEvent,
     QGuiApplication,
-    QKeyEvent,
+    QHideEvent,
     QPainter,
     QPainterPath,
     QPaintEvent,
     QShowEvent,
 )
 from PySide6.QtWidgets import (
-    QApplication,
     QLabel,
     QSystemTrayIcon,
     QVBoxLayout,
@@ -38,22 +40,29 @@ _TRAY_MARGIN = 8  # px between tray icon and panel edge
 class Panel(QWidget):
     """Frameless translucent dark panel anchored near the system tray."""
 
+    # Emitted from the pynput mouse listener background thread with the
+    # click's global screen coordinates. Connected with QueuedConnection
+    # so the slot runs on the main Qt thread.
+    _external_mouse_press = Signal(int, int)
+
     def __init__(self) -> None:
         super().__init__()
-        # Qt.WindowType.Popup is Qt's canonical transient-floating-window
-        # type: it automatically grabs mouse+keyboard when shown and
-        # closes on any click outside its bounds. This is what menus,
-        # tooltips, and dropdown popups use. It's the simplest reliable
-        # way to get click-outside-dismissal on Windows without relying
-        # on focus semantics (which Tool windows break) or global hooks.
+        # Tool hides the panel from the taskbar. We deliberately avoid
+        # relying on Qt focus events for dismissal — click-outside is
+        # handled by a pynput global mouse hook.
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
-            | Qt.WindowType.Popup
+            | Qt.WindowType.Tool
             | Qt.WindowType.WindowStaysOnTopHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setMinimumSize(_MIN_WIDTH, _MIN_HEIGHT)
+
+        self._mouse_listener: mouse.Listener | None = None
+        self._external_mouse_press.connect(
+            self._on_external_mouse_press,
+            Qt.ConnectionType.QueuedConnection,
+        )
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
@@ -66,19 +75,9 @@ class Panel(QWidget):
         layout.addWidget(self._placeholder)
         layout.addStretch(1)
 
-        app = QApplication.instance()
-        if app is not None:
-            app.installEventFilter(self)
-            # When the user clicks outside our application (desktop, another
-            # window, etc), Qt can't see that click as a widget event. The
-            # canonical fix is to listen for ApplicationInactive state and
-            # hide the panel then.
-            app.applicationStateChanged.connect(self._on_app_state_changed)
-
-    def _on_app_state_changed(self, state: Qt.ApplicationState) -> None:
-        if state == Qt.ApplicationState.ApplicationInactive and self.isVisible():
-            self.hide()
-
+    # ------------------------------------------------------------------
+    # Qt event overrides
+    # ------------------------------------------------------------------
     def paintEvent(self, event: QPaintEvent) -> None:  # noqa: ARG002 - Qt signature
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -94,47 +93,48 @@ class Panel(QWidget):
         )
         painter.fillPath(path, QColor(_BG_COLOR))
 
-    def showEvent(self, event: QShowEvent) -> None:  # noqa: ARG002 - Qt signature
-        # Ensure the panel gets real keyboard focus the moment it becomes
-        # visible, otherwise keyPressEvent (Escape) won't fire on Windows.
+    def showEvent(self, event: QShowEvent) -> None:  # noqa: ARG002
         self.raise_()
         self.activateWindow()
-        self.setFocus(Qt.FocusReason.OtherFocusReason)
+        self._start_mouse_listener()
 
-    def keyPressEvent(self, event: QKeyEvent) -> None:
-        if event.key() == Qt.Key.Key_Escape:
-            self.hide()
+    def hideEvent(self, event: QHideEvent) -> None:  # noqa: ARG002
+        self._stop_mouse_listener()
+
+    # ------------------------------------------------------------------
+    # Global mouse listener (for click-outside dismissal)
+    # ------------------------------------------------------------------
+    def _start_mouse_listener(self) -> None:
+        if self._mouse_listener is not None:
             return
-        super().keyPressEvent(event)
 
-    def focusOutEvent(self, event: QFocusEvent) -> None:
-        # Clicks on the Windows desktop / taskbar / shell do not always
-        # transition the app into ApplicationInactive, so
-        # applicationStateChanged alone is insufficient for click-outside
-        # dismissal. focusOutEvent fires any time the panel loses keyboard
-        # focus, which covers those cases reliably.
-        super().focusOutEvent(event)
-        if self.isVisible():
+        def on_click(
+            x: float, y: float, button: mouse.Button, pressed: bool
+        ) -> None:  # noqa: ARG001 - pynput signature
+            if not pressed:
+                return
+            # Hop to main thread via queued signal.
+            self._external_mouse_press.emit(int(x), int(y))
+
+        self._mouse_listener = mouse.Listener(on_click=on_click)
+        self._mouse_listener.start()
+
+    def _stop_mouse_listener(self) -> None:
+        listener = self._mouse_listener
+        self._mouse_listener = None
+        if listener is not None:
+            listener.stop()
+
+    @Slot(int, int)
+    def _on_external_mouse_press(self, x: int, y: int) -> None:
+        if not self.isVisible():
+            return
+        if not self.frameGeometry().contains(QPoint(x, y)):
             self.hide()
 
-    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
-        if not self.isVisible():
-            return super().eventFilter(watched, event)
-        event_type = event.type()
-        if event_type == QEvent.Type.MouseButtonPress:
-            # event.globalPosition() returns QPointF in recent Qt.
-            global_pos = event.globalPosition().toPoint()
-            if not self.frameGeometry().contains(global_pos):
-                self.hide()
-        elif event_type == QEvent.Type.KeyPress and isinstance(event, QKeyEvent):
-            # Tool windows on Windows don't always receive keyboard focus,
-            # so keyPressEvent never fires. Catch Escape at the app-event
-            # level instead — this runs regardless of which widget has focus.
-            if event.key() == Qt.Key.Key_Escape:
-                self.hide()
-                return True
-        return super().eventFilter(watched, event)
-
+    # ------------------------------------------------------------------
+    # positioning
+    # ------------------------------------------------------------------
     def show_near_tray(self, tray_icon: QSystemTrayIcon) -> None:
         """Show the panel positioned near the given tray icon.
 
