@@ -6,3 +6,7 @@ build/
 releases/
 .claude/
 coding-plans/
+.env
+*.env.*
+*.env
+nel.txt
