@@ -11,11 +11,13 @@ from PySide6.QtCore import QEvent, QObject, QPoint, QRect, Qt
 from PySide6.QtGui import (
     QColor,
     QCursor,
+    QFocusEvent,
     QGuiApplication,
     QKeyEvent,
     QPainter,
     QPainterPath,
     QPaintEvent,
+    QShowEvent,
 )
 from PySide6.QtWidgets import (
     QApplication,
@@ -38,12 +40,17 @@ class Panel(QWidget):
 
     def __init__(self) -> None:
         super().__init__()
+        # We deliberately DO NOT set Qt.WindowType.Tool here: on Windows,
+        # Tool windows cannot reliably receive keyboard focus, which
+        # breaks Escape-to-dismiss and makes the panel feel unresponsive.
+        # The tradeoff is that the panel will briefly appear in the
+        # taskbar. Phase 6 polish will revisit with a better solution.
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
-            | Qt.WindowType.Tool
             | Qt.WindowType.WindowStaysOnTopHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setMinimumSize(_MIN_WIDTH, _MIN_HEIGHT)
 
         layout = QVBoxLayout(self)
@@ -60,6 +67,15 @@ class Panel(QWidget):
         app = QApplication.instance()
         if app is not None:
             app.installEventFilter(self)
+            # When the user clicks outside our application (desktop, another
+            # window, etc), Qt can't see that click as a widget event. The
+            # canonical fix is to listen for ApplicationInactive state and
+            # hide the panel then.
+            app.applicationStateChanged.connect(self._on_app_state_changed)
+
+    def _on_app_state_changed(self, state: Qt.ApplicationState) -> None:
+        if state == Qt.ApplicationState.ApplicationInactive and self.isVisible():
+            self.hide()
 
     def paintEvent(self, event: QPaintEvent) -> None:  # noqa: ARG002 - Qt signature
         painter = QPainter(self)
@@ -76,11 +92,25 @@ class Panel(QWidget):
         )
         painter.fillPath(path, QColor(_BG_COLOR))
 
+    def showEvent(self, event: QShowEvent) -> None:  # noqa: ARG002 - Qt signature
+        # Ensure the panel gets real keyboard focus the moment it becomes
+        # visible, otherwise keyPressEvent (Escape) won't fire on Windows.
+        self.raise_()
+        self.activateWindow()
+        self.setFocus(Qt.FocusReason.OtherFocusReason)
+
     def keyPressEvent(self, event: QKeyEvent) -> None:
         if event.key() == Qt.Key.Key_Escape:
             self.hide()
             return
         super().keyPressEvent(event)
+
+    def focusOutEvent(self, event: QFocusEvent) -> None:
+        # If the user clicks/tabs away from the panel, hide it. This is a
+        # second safety net alongside applicationStateChanged — it covers
+        # the case where focus moves to another top-level window in our
+        # own app (e.g. a dialog) without the app becoming inactive.
+        super().focusOutEvent(event)
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
         if not self.isVisible():

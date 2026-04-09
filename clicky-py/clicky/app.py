@@ -128,13 +128,15 @@ def run() -> int:
     hotkey_monitor.start()
     tray_icon.show()
 
+    # Ensure the pynput listener thread is stopped before the app exits,
+    # otherwise Python may hang on interpreter shutdown waiting for it
+    # (pynput's helper thread is not always daemonic on Windows).
+    result.app.aboutToQuit.connect(hotkey_monitor.stop)
+
     if result.was_first_run:
         # Delay the first-run auto-show so the tray icon has time to be
         # laid out — otherwise tray_icon.geometry() returns an empty rect
         # on Windows and the panel falls back to screen-centering.
         QTimer.singleShot(100, lambda: panel.show_near_tray(tray_icon))
 
-    exit_code = result.app.exec()
-
-    hotkey_monitor.stop()
-    return exit_code
+    return result.app.exec()
