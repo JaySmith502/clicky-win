@@ -12,9 +12,14 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from platformdirs import user_config_dir, user_log_dir
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
 from clicky.config import Config, ConfigError
+from clicky.hotkey import HotkeyMonitor
+from clicky.state import VoiceState
+from clicky.ui.panel import Panel
+from clicky.ui.tray_icon import TrayIcon
 
 APP_NAME = "ClickyWin"
 APP_AUTHOR = "ClickyWin"
@@ -68,3 +73,68 @@ def bootstrap(argv: list[str] | None = None) -> BootstrapResult:
         config_path=config_path,
         log_dir=log_dir,
     )
+
+
+def run() -> int:
+    """Start the ClickyWin tray app and run the Qt event loop.
+
+    Wires together the tray icon, floating panel, and global hotkey
+    monitor. Blocks until the user quits via the tray menu.
+    """
+    result = bootstrap()
+
+    if result.was_first_run:
+        print(
+            f"[clicky] first run: created config at {result.config_path}",
+            file=sys.stderr,
+        )
+
+    if result.config_error is not None:
+        # Phase 1: log to stderr and proceed. Phase 2+ will surface this
+        # as a banner inside the panel.
+        print(
+            f"[clicky] config error: {result.config_error}",
+            file=sys.stderr,
+        )
+
+    tray_icon = TrayIcon(initial_state=VoiceState.IDLE)
+    panel = Panel()
+
+    def _toggle_panel() -> None:
+        if panel.isVisible():
+            panel.hide()
+        else:
+            panel.show_near_tray(tray_icon)
+
+    tray_icon.toggle_panel_requested.connect(_toggle_panel)
+
+    hotkey_binding = result.config.hotkey if result.config is not None else "ctrl+alt"
+    hotkey_monitor = HotkeyMonitor(binding=hotkey_binding)
+
+    def _on_hotkey_pressed() -> None:
+        print("[clicky] hotkey pressed", file=sys.stderr)
+        panel.show_near_tray(tray_icon)
+
+    def _on_hotkey_released() -> None:
+        print("[clicky] hotkey released", file=sys.stderr)
+
+    def _on_hotkey_cancelled() -> None:
+        print("[clicky] hotkey cancelled", file=sys.stderr)
+
+    hotkey_monitor.pressed.connect(_on_hotkey_pressed)
+    hotkey_monitor.released.connect(_on_hotkey_released)
+    hotkey_monitor.cancelled.connect(_on_hotkey_cancelled)
+
+    hotkey_monitor.start()
+    tray_icon.show()
+
+    if result.was_first_run:
+        # Delay the first-run auto-show so the tray icon has time to be
+        # laid out — otherwise tray_icon.geometry() returns an empty rect
+        # on Windows and the panel falls back to screen-centering.
+        QTimer.singleShot(100, lambda: panel.show_near_tray(tray_icon))
+
+    exit_code = result.app.exec()
+
+    hotkey_monitor.stop()
+    return exit_code
