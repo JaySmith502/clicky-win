@@ -2,21 +2,11 @@
 
 from __future__ import annotations
 
-import sys
-
-from clicky.app import bootstrap
+from clicky.app import run
 
 
 def main() -> int:
-    result = bootstrap()
-    if result.was_first_run:
-        print(f"[clicky] first run: created config at {result.config_path}")
-    if result.config_error is not None:
-        print(f"[clicky] config error: {result.config_error}", file=sys.stderr)
-    else:
-        assert result.config is not None
-        print(f"[clicky] config loaded: worker_url={result.config.worker_url}")
-    return 0
+    return run()
 
 
 if __name__ == "__main__":
