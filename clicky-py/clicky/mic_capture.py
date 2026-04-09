@@ -38,6 +38,7 @@ import numpy as np
 import sounddevice as sd
 from PySide6.QtCore import (
     Q_ARG,
+    QByteArray,
     QMetaObject,
     QObject,
     Qt,
@@ -73,7 +74,11 @@ class MicCapture(QObject):
         audio callback.
     """
 
-    pcm_chunk = Signal(bytes)
+    # NOTE: pcm_chunk uses QByteArray (not Python bytes) because PySide6
+    # does not auto-register the native ``bytes`` type as a QMetaType, so
+    # Q_ARG(bytes, ...) fails at runtime under QueuedConnection. Consumers
+    # that need real bytes can call ``bytes(qba)`` or ``qba.data()``.
+    pcm_chunk = Signal(QByteArray)
     audio_level = Signal(float)
     error = Signal(str)
 
@@ -154,7 +159,7 @@ class MicCapture(QObject):
             self,
             "_emit_pcm_chunk",
             Qt.ConnectionType.QueuedConnection,
-            Q_ARG(bytes, data),
+            Q_ARG(QByteArray, QByteArray(data)),
         )
         QMetaObject.invokeMethod(
             self,
@@ -174,8 +179,8 @@ class MicCapture(QObject):
     # ------------------------------------------------------------------
     # main-thread signal emitters
     # ------------------------------------------------------------------
-    @Slot(bytes)
-    def _emit_pcm_chunk(self, data: bytes) -> None:
+    @Slot(QByteArray)
+    def _emit_pcm_chunk(self, data: QByteArray) -> None:
         self.pcm_chunk.emit(data)
 
     @Slot(float)
