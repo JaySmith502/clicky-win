@@ -121,9 +121,16 @@ def run() -> int:
     def _on_hotkey_cancelled() -> None:
         print("[clicky] hotkey cancelled", file=sys.stderr)
 
+    def _on_escape_pressed() -> None:
+        # Only hide if the panel is visible — otherwise the Escape key
+        # has nothing to act on.
+        if panel.isVisible():
+            panel.hide()
+
     hotkey_monitor.pressed.connect(_on_hotkey_pressed)
     hotkey_monitor.released.connect(_on_hotkey_released)
     hotkey_monitor.cancelled.connect(_on_hotkey_cancelled)
+    hotkey_monitor.escape_pressed.connect(_on_escape_pressed)
 
     hotkey_monitor.start()
     tray_icon.show()
