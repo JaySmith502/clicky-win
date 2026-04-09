@@ -29,6 +29,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from clicky.state import VoiceState
+from clicky.ui.waveform_view import WaveformView
+
 _BG_COLOR = "#1a1a1a"
 _TEXT_COLOR = "#e0e0e0"
 _CORNER_RADIUS = 16
@@ -66,14 +69,40 @@ class Panel(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
+
+        self._waveform = WaveformView(self)
+        self._waveform.hide()
+
         self._placeholder = QLabel("ClickyWin \u2014 Hold Ctrl+Alt to talk")
         self._placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._placeholder.setStyleSheet(
             f"color: {_TEXT_COLOR}; font-size: 14px;"
         )
+        layout.addWidget(self._waveform)
         layout.addStretch(1)
         layout.addWidget(self._placeholder)
         layout.addStretch(1)
+
+    # ------------------------------------------------------------------
+    # state / audio wiring
+    # ------------------------------------------------------------------
+    def set_state(self, state: VoiceState) -> None:
+        """Update panel sub-views to reflect the given voice state.
+
+        In LISTENING, the waveform is shown and its 60fps repaint timer
+        started. Every other state hides the waveform and stops the
+        timer so we don't burn CPU on off-screen repaints.
+        """
+        if state is VoiceState.LISTENING:
+            self._waveform.show()
+            self._waveform.start()
+        else:
+            self._waveform.stop()
+            self._waveform.hide()
+
+    def set_audio_level(self, level: float) -> None:
+        """Forward a mic RMS level (in [0, 1]) to the waveform."""
+        self._waveform.push_level(level)
 
     # ------------------------------------------------------------------
     # Qt event overrides
