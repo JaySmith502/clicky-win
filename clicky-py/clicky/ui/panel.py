@@ -40,13 +40,15 @@ class Panel(QWidget):
 
     def __init__(self) -> None:
         super().__init__()
-        # We deliberately DO NOT set Qt.WindowType.Tool here: on Windows,
-        # Tool windows cannot reliably receive keyboard focus, which
-        # breaks Escape-to-dismiss and makes the panel feel unresponsive.
-        # The tradeoff is that the panel will briefly appear in the
-        # taskbar. Phase 6 polish will revisit with a better solution.
+        # Qt.WindowType.Popup is Qt's canonical transient-floating-window
+        # type: it automatically grabs mouse+keyboard when shown and
+        # closes on any click outside its bounds. This is what menus,
+        # tooltips, and dropdown popups use. It's the simplest reliable
+        # way to get click-outside-dismissal on Windows without relying
+        # on focus semantics (which Tool windows break) or global hooks.
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.Popup
             | Qt.WindowType.WindowStaysOnTopHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
