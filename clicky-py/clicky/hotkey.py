@@ -3,7 +3,8 @@
 Watches the keyboard via ``pynput`` on a background thread and emits
 Qt signals when a configured modifier combination transitions between
 pressed and released. The signals are marshaled to the main thread via
-``QTimer.singleShot`` so downstream Qt slots can touch widgets safely.
+``QMetaObject.invokeMethod`` with a queued connection, so downstream Qt
+slots run on the main thread and can touch widgets safely.
 
 Supported bindings (closed set in v1):
 
@@ -43,7 +44,7 @@ from __future__ import annotations
 from enum import Enum, auto
 
 from pynput import keyboard
-from PySide6.QtCore import QObject, QTimer, Signal
+from PySide6.QtCore import QMetaObject, QObject, Qt, Signal, Slot
 
 
 class _HotkeyState(Enum):
@@ -166,7 +167,7 @@ class HotkeyMonitor(QObject):
         if self._state == _HotkeyState.UNARMED:
             if self._is_armed():
                 self._state = _HotkeyState.ARMED
-                self._emit(self.pressed)
+                self._post_main("_emit_pressed")
             return
 
         if self._state == _HotkeyState.ARMED:
@@ -175,7 +176,7 @@ class HotkeyMonitor(QObject):
             # both "required mods present" and "nothing else held".
             if not self._is_armed():
                 self._state = _HotkeyState.CANCELLED
-                self._emit(self.cancelled)
+                self._post_main("_emit_cancelled")
             return
 
         # CANCELLED — absorb further presses until everything is lifted.
@@ -190,7 +191,7 @@ class HotkeyMonitor(QObject):
             # Releasing any of the required modifiers ends the press.
             if not self._required_mods_all_held():
                 self._state = _HotkeyState.UNARMED
-                self._emit(self.released)
+                self._post_main("_emit_released")
             return
 
         if self._state == _HotkeyState.CANCELLED:
@@ -236,8 +237,27 @@ class HotkeyMonitor(QObject):
     # ------------------------------------------------------------------
     # thread-safe signal emission
     # ------------------------------------------------------------------
-    @staticmethod
-    def _emit(signal: Signal) -> None:
-        # pynput callbacks run on a background thread; hop onto the
-        # main Qt thread via the event loop before firing the signal.
-        QTimer.singleShot(0, signal.emit)
+    # pynput callbacks run on the listener's background thread. We
+    # marshal onto the main thread with QMetaObject.invokeMethod using
+    # a queued connection so that the slot (and therefore the signal
+    # emit it performs) runs on the thread this QObject lives in —
+    # normally the main thread. QTimer.singleShot does NOT work here
+    # because it tries to post via the caller thread's event loop,
+    # which pynput's background thread does not have.
+
+    def _post_main(self, slot_name: str) -> None:
+        QMetaObject.invokeMethod(
+            self, slot_name, Qt.ConnectionType.QueuedConnection
+        )
+
+    @Slot()
+    def _emit_pressed(self) -> None:
+        self.pressed.emit()
+
+    @Slot()
+    def _emit_released(self) -> None:
+        self.released.emit()
+
+    @Slot()
+    def _emit_cancelled(self) -> None:
+        self.cancelled.emit()

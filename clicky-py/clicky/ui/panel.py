@@ -83,11 +83,21 @@ class Panel(QWidget):
         super().keyPressEvent(event)
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
-        if event.type() == QEvent.Type.MouseButtonPress and self.isVisible():
+        if not self.isVisible():
+            return super().eventFilter(watched, event)
+        event_type = event.type()
+        if event_type == QEvent.Type.MouseButtonPress:
             # event.globalPosition() returns QPointF in recent Qt.
             global_pos = event.globalPosition().toPoint()
             if not self.frameGeometry().contains(global_pos):
                 self.hide()
+        elif event_type == QEvent.Type.KeyPress and isinstance(event, QKeyEvent):
+            # Tool windows on Windows don't always receive keyboard focus,
+            # so keyPressEvent never fires. Catch Escape at the app-event
+            # level instead — this runs regardless of which widget has focus.
+            if event.key() == Qt.Key.Key_Escape:
+                self.hide()
+                return True
         return super().eventFilter(watched, event)
 
     def show_near_tray(self, tray_icon: QSystemTrayIcon) -> None:
