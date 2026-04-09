@@ -106,11 +106,14 @@ class Panel(QWidget):
         super().keyPressEvent(event)
 
     def focusOutEvent(self, event: QFocusEvent) -> None:
-        # If the user clicks/tabs away from the panel, hide it. This is a
-        # second safety net alongside applicationStateChanged — it covers
-        # the case where focus moves to another top-level window in our
-        # own app (e.g. a dialog) without the app becoming inactive.
+        # Clicks on the Windows desktop / taskbar / shell do not always
+        # transition the app into ApplicationInactive, so
+        # applicationStateChanged alone is insufficient for click-outside
+        # dismissal. focusOutEvent fires any time the panel loses keyboard
+        # focus, which covers those cases reliably.
         super().focusOutEvent(event)
+        if self.isVisible():
+            self.hide()
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
         if not self.isVisible():
