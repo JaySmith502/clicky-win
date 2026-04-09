@@ -17,6 +17,7 @@ from PySide6.QtWidgets import QApplication
 
 from clicky.config import Config, ConfigError
 from clicky.hotkey import HotkeyMonitor
+from clicky.mic_capture import MicCapture
 from clicky.state import VoiceState
 from clicky.ui.panel import Panel
 from clicky.ui.tray_icon import TrayIcon
@@ -99,6 +100,10 @@ def run() -> int:
 
     tray_icon = TrayIcon(initial_state=VoiceState.IDLE)
     panel = Panel()
+    mic = MicCapture()
+
+    mic.audio_level.connect(panel.set_audio_level)
+    mic.error.connect(lambda msg: print(f"[clicky] mic error: {msg}", file=sys.stderr))
 
     def _toggle_panel() -> None:
         if panel.isVisible():
@@ -113,13 +118,19 @@ def run() -> int:
 
     def _on_hotkey_pressed() -> None:
         print("[clicky] hotkey pressed", file=sys.stderr)
+        mic.start()
+        panel.set_state(VoiceState.LISTENING)
         panel.show_near_tray(tray_icon)
 
     def _on_hotkey_released() -> None:
         print("[clicky] hotkey released", file=sys.stderr)
+        mic.stop()
+        panel.set_state(VoiceState.IDLE)
 
     def _on_hotkey_cancelled() -> None:
         print("[clicky] hotkey cancelled", file=sys.stderr)
+        mic.stop()
+        panel.set_state(VoiceState.IDLE)
 
     def _on_escape_pressed() -> None:
         # Only hide if the panel is visible — otherwise the Escape key
