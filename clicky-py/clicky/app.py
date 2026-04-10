@@ -8,6 +8,7 @@ the resulting Config for downstream components to read.
 from __future__ import annotations
 
 import asyncio
+import ctypes
 import sys
 from collections import deque
 from collections.abc import AsyncGenerator
@@ -48,6 +49,12 @@ def _example_config_path() -> Path:
 
 
 def bootstrap(argv: list[str] | None = None) -> BootstrapResult:
+    if sys.platform == "win32":
+        try:
+            ctypes.windll.shcore.SetProcessDpiAwareness(2)  # PROCESS_PER_MONITOR_DPI_AWARE
+        except (AttributeError, OSError):
+            pass
+
     argv = argv if argv is not None else sys.argv
     app = QApplication(argv)
     app.setApplicationName(APP_NAME)
