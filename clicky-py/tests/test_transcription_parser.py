@@ -46,3 +46,10 @@ def test_ignores_unknown_message_type() -> None:
 def test_ignores_termination_message() -> None:
     event = parse_assemblyai_message({"type": "Termination"})
     assert event is None
+
+
+def test_parses_lowercase_turn_type() -> None:
+    event = parse_assemblyai_message(
+        {"type": "turn", "transcript": "hi", "end_of_turn": True}
+    )
+    assert event == TranscriptEvent(text="hi", is_final=True)
