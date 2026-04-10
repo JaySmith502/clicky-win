@@ -1,14 +1,27 @@
-"""Anthropic SSE stream parser for LLM text delta extraction.
+"""Anthropic SSE stream parser and streaming HTTP client.
 
-This module provides a lightweight parser for Anthropic streaming API responses
-delivered via Server-Sent Events (SSE). It will be extended in Task 4.5 with
-the full LLMClient class for making streaming requests.
+This module provides two layers:
+
+1. A pure parser — ``parse_anthropic_sse_stream`` — that decodes Anthropic
+   streaming API SSE bytes into text-delta strings.  Zero Qt / async / network
+   dependencies; unit-tested in isolation.
+2. ``LLMClient`` — a ``QObject`` that POSTs to a Cloudflare Worker proxy at
+   ``/chat`` using ``httpx.AsyncClient`` with streaming enabled, accumulates
+   SSE chunks, feeds complete event blocks through the parser, and emits
+   ``delta`` / ``done`` / ``error`` Qt signals.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 from typing import Iterator
+
+import httpx
+from PySide6.QtCore import QObject, Signal
+
+logger = logging.getLogger(__name__)
 
 
 def parse_anthropic_sse_stream(raw: bytes) -> Iterator[str]:
@@ -83,3 +96,103 @@ def parse_anthropic_sse_stream(raw: bytes) -> Iterator[str]:
 
         # All other event types (message_start, message_delta, message_stop,
         # content_block_stop, ping) are intentionally ignored.
+
+
+class LLMClient(QObject):
+    """Streaming HTTP client for the Anthropic Messages API via a worker proxy.
+
+    Emits Qt signals as text deltas arrive so the UI can update in real-time.
+    The worker at ``/chat`` forwards the request to
+    ``https://api.anthropic.com/v1/messages`` and injects the API key
+    server-side.
+
+    Signals:
+        delta(str): Emitted for each text fragment as it streams in.
+        done(str):  Emitted once with the full accumulated response text.
+        error(str): Emitted when any exception occurs during the request.
+    """
+
+    delta = Signal(str)
+    done = Signal(str)
+    error = Signal(str)
+
+    def __init__(self, worker_url: str, *, parent: QObject | None = None) -> None:
+        super().__init__(parent)
+        self._worker_url = worker_url.rstrip("/")
+
+    # ------------------------------------------------------------------
+    # Public async API
+    # ------------------------------------------------------------------
+
+    async def send(
+        self,
+        messages: list[dict],
+        system: str,
+        model: str,
+        max_tokens: int = 1024,
+    ) -> str:
+        """POST a streaming chat completion and return the full response text.
+
+        Args:
+            messages: Anthropic Messages API ``messages`` array.
+            system:   System prompt string.
+            model:    Model identifier (e.g. ``"claude-sonnet-4-20250514"``).
+            max_tokens: Maximum tokens to generate.
+
+        Returns:
+            The fully accumulated response text.
+
+        Raises:
+            httpx.HTTPStatusError: If the worker returns a non-2xx status.
+            asyncio.CancelledError: If the caller cancels the task.
+        """
+        url = f"{self._worker_url}/chat"
+        body = {
+            "model": model,
+            "max_tokens": max_tokens,
+            "stream": True,
+            "system": system,
+            "messages": messages,
+        }
+
+        full_text = ""
+        buf = b""
+
+        try:
+            async with httpx.AsyncClient() as client:
+                async with client.stream("POST", url, json=body) as response:
+                    response.raise_for_status()
+
+                    async for chunk in response.aiter_bytes():
+                        buf += chunk
+
+                        # Split on double-newline SSE boundaries.  Keep any
+                        # incomplete trailing fragment in *buf* for the next
+                        # iteration.
+                        while b"\n\n" in buf:
+                            event_block, buf = buf.split(b"\n\n", 1)
+                            # Re-add the delimiter so the parser sees a
+                            # well-formed SSE event block.
+                            for text_fragment in parse_anthropic_sse_stream(
+                                event_block + b"\n\n"
+                            ):
+                                self.delta.emit(text_fragment)
+                                full_text += text_fragment
+
+            # Flush any remaining bytes in the buffer (final event may lack a
+            # trailing blank line).
+            if buf.strip():
+                for text_fragment in parse_anthropic_sse_stream(buf):
+                    self.delta.emit(text_fragment)
+                    full_text += text_fragment
+
+            self.done.emit(full_text)
+            return full_text
+
+        except asyncio.CancelledError:
+            logger.debug("LLMClient.send() cancelled")
+            raise
+
+        except Exception as exc:
+            self.error.emit(str(exc))
+            raise
