@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 )
 
 from clicky.state import VoiceState
+from clicky.ui.transcript_view import TranscriptView
 from clicky.ui.waveform_view import WaveformView
 
 _BG_COLOR = "#1a1a1a"
@@ -73,12 +74,17 @@ class Panel(QWidget):
         self._waveform = WaveformView(self)
         self._waveform.hide()
 
+        # Public: app.py wires TranscriptionClient signals to these slots.
+        self.transcript = TranscriptView(self)
+        self.transcript.hide()
+
         self._placeholder = QLabel("ClickyWin \u2014 Hold Ctrl+Alt to talk")
         self._placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._placeholder.setStyleSheet(
             f"color: {_TEXT_COLOR}; font-size: 14px;"
         )
         layout.addWidget(self._waveform)
+        layout.addWidget(self.transcript)
         layout.addStretch(1)
         layout.addWidget(self._placeholder)
         layout.addStretch(1)
@@ -89,16 +95,23 @@ class Panel(QWidget):
     def set_state(self, state: VoiceState) -> None:
         """Update panel sub-views to reflect the given voice state.
 
-        In LISTENING, the waveform is shown and its 60fps repaint timer
-        started. Every other state hides the waveform and stops the
-        timer so we don't burn CPU on off-screen repaints.
+        LISTENING: waveform + transcript visible, waveform timer running.
+        PROCESSING: waveform hidden (timer stopped), transcript stays visible.
+        IDLE: everything hidden, transcript cleared.
         """
         if state is VoiceState.LISTENING:
             self._waveform.show()
             self._waveform.start()
+            self.transcript.show()
+        elif state is VoiceState.PROCESSING:
+            self._waveform.stop()
+            self._waveform.hide()
+            self.transcript.show()
         else:
             self._waveform.stop()
             self._waveform.hide()
+            self.transcript.hide()
+            self.transcript.clear()
 
     def set_audio_level(self, level: float) -> None:
         """Forward a mic RMS level (in [0, 1]) to the waveform."""
