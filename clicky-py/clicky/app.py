@@ -10,20 +10,21 @@ from __future__ import annotations
 import asyncio
 import ctypes
 import sys
-from collections import deque
-from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from pathlib import Path
 
 import qasync
 from platformdirs import user_config_dir, user_log_dir
-from PySide6.QtCore import QByteArray, QTimer
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
+from clicky.clients.llm_client import LLMClient
 from clicky.clients.transcription_client import TranscriptionClient
+from clicky.companion_manager import CompanionManager
 from clicky.config import Config, ConfigError
 from clicky.hotkey import HotkeyMonitor
 from clicky.mic_capture import MicCapture
+from clicky.screen_capture import capture_all
 from clicky.state import VoiceState
 from clicky.ui.panel import Panel
 from clicky.ui.tray_icon import TrayIcon
@@ -92,7 +93,7 @@ def run() -> int:
     """Start the ClickyWin tray app and run the Qt event loop.
 
     Wires together the tray icon, floating panel, global hotkey
-    monitor, and transcription client. Blocks until the user quits
+    monitor, and CompanionManager. Blocks until the user quits
     via the tray menu.
     """
     result = bootstrap()
@@ -127,111 +128,10 @@ def run() -> int:
     tray_icon.toggle_panel_requested.connect(_toggle_panel)
 
     # ------------------------------------------------------------------
-    # Transcription client (only when config loaded successfully)
-    # ------------------------------------------------------------------
-    transcription: TranscriptionClient | None = None
-    if result.config is not None:
-        transcription = TranscriptionClient(worker_url=result.config.worker_url)
-        transcription.interim_transcript.connect(panel.transcript.set_interim)
-        transcription.final_transcript.connect(panel.transcript.set_final)
-        transcription.final_transcript.connect(
-            lambda text: print(f"[clicky] final transcript: {text}", file=sys.stderr)
-        )
-        transcription.error.connect(
-            lambda msg: print(f"[clicky] transcription error: {msg}", file=sys.stderr)
-        )
-
-    # ------------------------------------------------------------------
-    # PCM deque bridge: mic.pcm_chunk → async generator for transcription
-    # ------------------------------------------------------------------
-    # Mutable state shared between the Qt signal handler (which appends
-    # chunks) and the async generator (which drains them). Replaced on
-    # every hotkey-press cycle so a stale generator from a previous
-    # session cannot leak chunks into the new one.
-    # PCM bridge state lives in a mutable container so that every closure
-    # (_on_pcm_chunk, _pcm_async_generator, _on_hotkey_pressed,
-    # _stop_transcription) always sees the *current* session's objects
-    # without needing ``nonlocal`` rebinding (which only helps direct
-    # assignments in the enclosing scope, not reads in sibling closures).
-    _pcm: dict = {
-        "deque": deque(),
-        "event": asyncio.Event(),
-        "done": False,
-    }
-
-    def _on_pcm_chunk(chunk: QByteArray) -> None:
-        _pcm["deque"].append(chunk)
-        _pcm["event"].set()
-
-    mic.pcm_chunk.connect(_on_pcm_chunk)
-
-    async def _pcm_async_generator() -> AsyncGenerator[QByteArray, None]:
-        """Async generator that yields QByteArray chunks from the deque.
-
-        Snapshots the deque and event at creation time so that a reset in
-        ``_on_hotkey_pressed`` (which replaces the dict values) doesn't
-        confuse a still-draining generator from the previous session.
-        """
-        dq = _pcm["deque"]
-        ev = _pcm["event"]
-        while True:
-            await ev.wait()
-            ev.clear()
-            while dq:
-                yield dq.popleft()
-            if _pcm["done"]:
-                return
-
-    # Track the current transcription stream task so we can await it if
-    # needed and avoid orphaned coroutines.
-    _stream_task: list[asyncio.Task | None] = [None]
-
-    # ------------------------------------------------------------------
-    # Hotkey handlers
+    # Hotkey monitor
     # ------------------------------------------------------------------
     hotkey_binding = result.config.hotkey if result.config is not None else "ctrl+alt"
     hotkey_monitor = HotkeyMonitor(binding=hotkey_binding)
-
-    def _on_hotkey_pressed() -> None:
-        print("[clicky] hotkey pressed", file=sys.stderr)
-        mic.start()
-        panel.set_state(VoiceState.LISTENING)
-        panel.show_near_tray(tray_icon)
-
-        if transcription is not None:
-            # Cancel any lingering stream task from a previous session
-            # (rapid press-release-press can outrun stop_stream's
-            # ensure_future).
-            old = _stream_task[0]
-            if old is not None and not old.done():
-                old.cancel()
-            # Reset the PCM bridge for a fresh session.
-            _pcm["deque"] = deque()
-            _pcm["event"] = asyncio.Event()
-            _pcm["done"] = False
-            panel.transcript.clear()
-            _stream_task[0] = asyncio.ensure_future(
-                transcription.start_stream(_pcm_async_generator())
-            )
-
-    def _stop_transcription() -> None:
-        """Signal the PCM generator to terminate and stop the stream."""
-        _pcm["done"] = True
-        _pcm["event"].set()  # wake the generator so it sees the done flag
-        if transcription is not None:
-            asyncio.ensure_future(transcription.stop_stream())
-
-    def _on_hotkey_released() -> None:
-        print("[clicky] hotkey released", file=sys.stderr)
-        mic.stop()
-        _stop_transcription()
-        panel.set_state(VoiceState.PROCESSING)
-
-    def _on_hotkey_cancelled() -> None:
-        print("[clicky] hotkey cancelled", file=sys.stderr)
-        mic.stop()
-        _stop_transcription()
-        panel.set_state(VoiceState.IDLE)
 
     def _on_escape_pressed() -> None:
         # Only hide if the panel is visible — otherwise the Escape key
@@ -239,10 +139,54 @@ def run() -> int:
         if panel.isVisible():
             panel.hide()
 
-    hotkey_monitor.pressed.connect(_on_hotkey_pressed)
-    hotkey_monitor.released.connect(_on_hotkey_released)
-    hotkey_monitor.cancelled.connect(_on_hotkey_cancelled)
     hotkey_monitor.escape_pressed.connect(_on_escape_pressed)
+
+    # ------------------------------------------------------------------
+    # CompanionManager (only when config loaded successfully)
+    # ------------------------------------------------------------------
+    if result.config is not None:
+        transcription = TranscriptionClient(worker_url=result.config.worker_url)
+        llm = LLMClient(worker_url=result.config.worker_url)
+        manager = CompanionManager(
+            config=result.config,
+            mic=mic,
+            hotkey=hotkey_monitor,
+            transcription=transcription,
+            llm=llm,
+            screen_capture_fn=capture_all,
+            panel_visibility_controller=panel,
+        )
+
+        # State → panel + tray
+        manager.state_changed.connect(panel.set_state)
+        manager.state_changed.connect(tray_icon.set_state)
+
+        # Audio level → panel waveform
+        manager.audio_level.connect(panel.set_audio_level)
+
+        # Transcription → panel transcript
+        manager.interim_transcript.connect(panel.transcript.set_interim)
+        manager.final_transcript.connect(panel.transcript.set_final)
+        manager.final_transcript.connect(
+            lambda text: print(f"[clicky] final transcript: {text}", file=sys.stderr)
+        )
+
+        # LLM response → panel response view
+        manager.response_delta.connect(panel.response.append_delta)
+        manager.response_complete.connect(panel.response.set_full)
+        manager.response_complete.connect(
+            lambda text: print(f"[clicky] response complete: {text[:120]}", file=sys.stderr)
+        )
+
+        # Errors → stderr
+        manager.error.connect(
+            lambda msg: print(f"[clicky] error: {msg}", file=sys.stderr)
+        )
+
+        # Show panel near tray when entering LISTENING
+        manager.state_changed.connect(
+            lambda state: panel.show_near_tray(tray_icon) if state == VoiceState.LISTENING else None
+        )
 
     hotkey_monitor.start()
     tray_icon.show()
@@ -251,7 +195,6 @@ def run() -> int:
     # otherwise Python may hang on interpreter shutdown waiting for it
     # (pynput's helper thread is not always daemonic on Windows).
     result.app.aboutToQuit.connect(hotkey_monitor.stop)
-    result.app.aboutToQuit.connect(_stop_transcription)
 
     if result.was_first_run:
         # Delay the first-run auto-show so the tray icon has time to be
