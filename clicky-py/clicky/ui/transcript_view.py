@@ -1,9 +1,11 @@
 """Transcript view widget for ClickyWin.
 
-Displays two lines of transcript text from the Deepgram stream:
+Displays two lines of transcript text from the AssemblyAI stream:
 an interim (in-flight) line in gray italic, and a final line in
 white regular weight. Uses a single QLabel with rich text so both
 lines render in one widget without layout jitter.
+
+See ``clicky.clients.transcription_client`` for the websocket lifecycle.
 """
 
 from __future__ import annotations
