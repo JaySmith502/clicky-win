@@ -13,6 +13,7 @@ dependencies = [
     "websockets>=12.0",
     "pillow>=10.0",
     "platformdirs>=4.0",
+    "qasync>=0.27",
 ]
 
 [dependency-groups]
