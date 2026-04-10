@@ -87,6 +87,19 @@ def parse_assemblyai_message(msg: dict) -> TranscriptEvent | None:
     return TranscriptEvent(text=transcript, is_final=is_final)
 
 
+def _redact_token(msg: str, token: str | None) -> str:
+    """Scrub a token substring from a stringified exception / log message.
+
+    ``websockets.connect`` formats the full URL (including our query-string
+    token) into its exception messages, which then flow through ``logger``
+    calls and the ``error`` Qt signal. This helper keeps the token out of
+    log files, crash reports, and any UI surface that receives the signal.
+    """
+    if not token:
+        return msg
+    return msg.replace(token, "<redacted>")
+
+
 class TranscriptionClient(QObject):
     """Qt-facing AssemblyAI v3 streaming websocket client.
 
@@ -132,6 +145,14 @@ class TranscriptionClient(QObject):
         self._last_final_text: str | None = None
         self._drain_event: asyncio.Event | None = None
         self._stopping: bool = False
+        # Whether a websocket session ever actually opened during the most
+        # recent ``start_stream`` invocation. Used to gate the empty-final
+        # sentinel in ``stop_stream`` so an out-of-order stop before start
+        # cannot spuriously emit ``final_transcript("")``.
+        self._session_started: bool = False
+        # Token for the currently-connecting / connected session. Held only
+        # long enough to redact it from any exception text before logging.
+        self._current_token: str | None = None
 
     # ------------------------------------------------------------------
     # public API
@@ -147,12 +168,21 @@ class TranscriptionClient(QObject):
         """
         self._last_final_text = None
         self._stopping = False
+        self._session_started = False
 
         try:
             await self._run_session(pcm_chunk_iterator, reconnect_allowed=True)
         except Exception as exc:  # noqa: BLE001 — funnel to the error signal
-            logger.exception("TranscriptionClient.start_stream failed")
-            self.error.emit(str(exc))
+            redacted = _redact_token(str(exc), self._current_token)
+            # Use logger.error with the redacted string rather than
+            # logger.exception (which dumps the raw traceback including the
+            # unredacted URL). The traceback still gets logged at debug level
+            # for local diagnostics if the operator opts in.
+            logger.error("TranscriptionClient.start_stream failed: %s", redacted)
+            logger.debug("start_stream traceback", exc_info=True)
+            self.error.emit(redacted)
+        finally:
+            self._current_token = None
 
     async def stop_stream(self) -> None:
         """Graceful drain: Terminate frame, bounded wait for final, close.
@@ -168,6 +198,18 @@ class TranscriptionClient(QObject):
           6. Emit ``final_transcript("")`` if no final was ever observed —
              the empty-transcript sentinel from PRD Task 4.8.
         """
+        # Idempotency guard: a second call after a completed stop is a no-op.
+        # ``_stopping`` is True and the ws has already been nulled.
+        if self._stopping and self._ws is None:
+            return
+
+        # Snapshot whether a session actually ran before we start tearing
+        # state down. This gates the empty-final sentinel at the bottom so a
+        # stray ``stop_stream`` call before ``start_stream`` cannot emit a
+        # spurious ``final_transcript("")`` and trip CompanionManager's
+        # silent-abort path.
+        session_ran = self._session_started
+
         self._stopping = True
 
         ws = self._ws
@@ -212,7 +254,10 @@ class TranscriptionClient(QObject):
         self._drain_event = None
 
         # Empty-transcript sentinel for the CompanionManager silent-abort rule.
-        if self._last_final_text is None:
+        # Only fires if a session actually opened this cycle AND no final was
+        # ever observed — stop-before-start is a caller bug, not a silent
+        # abort.
+        if session_ran and self._last_final_text is None:
             self.final_transcript.emit("")
 
     # ------------------------------------------------------------------
@@ -226,6 +271,7 @@ class TranscriptionClient(QObject):
     ) -> None:
         """Fetch token, connect ws, run send+recv loops, handle one reconnect."""
         token = await self._fetch_token()
+        self._current_token = token
         ws_url = (
             f"{_ASSEMBLYAI_WS_BASE}"
             f"?token={token}"
@@ -236,46 +282,57 @@ class TranscriptionClient(QObject):
         try:
             ws = await websockets.connect(ws_url)
         except Exception as exc:  # noqa: BLE001
+            redacted = _redact_token(str(exc), token)
             if reconnect_allowed and not self._stopping:
-                logger.warning("initial ws connect failed, retrying once: %s", exc)
+                logger.warning("initial ws connect failed, retrying once: %s", redacted)
                 await self._run_session(pcm_chunk_iterator, reconnect_allowed=False)
                 return
-            raise
+            # Re-raise as a RuntimeError carrying the redacted message so the
+            # outer ``start_stream`` handler never sees the raw token in str(exc).
+            raise RuntimeError(f"websocket connect failed: {redacted}") from exc
 
         self._ws = ws
         self._drain_event = asyncio.Event()
+        self._session_started = True
 
         self._send_task = asyncio.create_task(self._send_loop(ws, pcm_chunk_iterator))
         self._recv_task = asyncio.create_task(self._recv_loop(ws))
 
-        try:
-            done, pending = await asyncio.wait(
-                {self._send_task, self._recv_task},
-                return_when=asyncio.FIRST_EXCEPTION,
-            )
-        except asyncio.CancelledError:
-            raise
+        # No try/except around asyncio.wait: a bare ``except CancelledError: raise``
+        # is a no-op, and we have no cleanup to do here — task teardown lives
+        # below once we know which branch (reconnect vs propagate) we're in.
+        done, pending = await asyncio.wait(
+            {self._send_task, self._recv_task},
+            return_when=asyncio.FIRST_EXCEPTION,
+        )
 
         # Surface any exception from the completed task(s). If the recv loop
         # died on a connection drop mid-stream and we still have the reconnect
-        # budget, retry once.
+        # budget, retry once. Otherwise cancel the sibling, close the ws, and
+        # re-raise so ``start_stream`` can funnel it to the error signal.
         for task in done:
             exc = task.exception()
             if exc is None:
                 continue
+
+            # Normal close during graceful stop: the Terminate frame we sent
+            # in ``stop_stream`` causes the server to close the ws, which
+            # surfaces here as ConnectionClosed on either loop. Don't treat
+            # that as an error.
+            if self._stopping and isinstance(exc, websockets.ConnectionClosed):
+                continue
+
             if (
                 reconnect_allowed
                 and not self._stopping
                 and isinstance(exc, websockets.ConnectionClosed)
             ):
-                logger.warning("ws dropped mid-stream, reconnecting once: %s", exc)
+                logger.warning(
+                    "ws dropped mid-stream, reconnecting once: %s",
+                    _redact_token(str(exc), token),
+                )
                 # Cancel the remaining task before retrying.
-                for p in pending:
-                    p.cancel()
-                    try:
-                        await p
-                    except (asyncio.CancelledError, Exception):  # noqa: BLE001
-                        pass
+                await self._drain_pending(pending)
                 try:
                     await ws.close()
                 except Exception:  # noqa: BLE001
@@ -283,7 +340,33 @@ class TranscriptionClient(QObject):
                 self._ws = None
                 await self._run_session(pcm_chunk_iterator, reconnect_allowed=False)
                 return
+
+            # Non-reconnect error path: cancel orphaned sibling(s) BEFORE
+            # re-raising so they don't leak as dangling tasks with
+            # "Task exception was never retrieved" warnings.
+            await self._drain_pending(pending)
+            try:
+                await ws.close()
+            except Exception:  # noqa: BLE001
+                pass
+            self._ws = None
             raise exc
+
+    @staticmethod
+    async def _drain_pending(pending: set[asyncio.Task]) -> None:
+        """Cancel and await every task in ``pending``, swallowing exceptions.
+
+        Used from both the reconnect branch and the non-reconnect error branch
+        of ``_run_session`` to keep task cleanup identical on both paths.
+        """
+        for p in pending:
+            if p.done():
+                continue
+            p.cancel()
+            try:
+                await p
+            except BaseException:  # noqa: BLE001 — teardown must not raise
+                pass
 
     async def _fetch_token(self) -> str:
         """POST to the Cloudflare Worker's ``/transcribe-token`` route."""
@@ -309,13 +392,24 @@ class TranscriptionClient(QObject):
         convert to ``bytes`` here before the websocket send, which expects a
         bytes-like object.
         """
-        async for chunk in pcm_chunk_iterator:
+        try:
+            async for chunk in pcm_chunk_iterator:
+                if self._stopping:
+                    break
+                # QByteArray -> bytes. ``bytes(qba)`` copies the buffer via
+                # the buffer protocol, which is what we want since the wire
+                # send may outlive the caller's ref.
+                payload = bytes(chunk)
+                await ws.send(payload)
+        except websockets.ConnectionClosed:
+            # During ``stop_stream``, the ws is closed out from under us and
+            # the next ``ws.send`` raises ConnectionClosed. That's a normal
+            # graceful-stop race, not an error — swallow it. Mid-stream drops
+            # while NOT stopping re-raise so ``_run_session`` can trigger its
+            # one-shot reconnect.
             if self._stopping:
-                break
-            # QByteArray -> bytes. ``bytes(qba)`` copies the buffer, which is
-            # what we want since the wire send may outlive the caller's ref.
-            payload = bytes(chunk) if isinstance(chunk, QByteArray) else bytes(chunk)
-            await ws.send(payload)
+                return
+            raise
 
     async def _recv_loop(self, ws: websockets.WebSocketClientProtocol) -> None:
         """Receive JSON text frames, parse them, and emit Qt signals."""
@@ -337,6 +431,19 @@ class TranscriptionClient(QObject):
                     continue
 
                 if event.is_final:
+                    # Dedupe by text equality. Swift's reference dedupes by
+                    # turnOrder (handleTurnMessage + storeTurnTranscript
+                    # around lines 273-330) so each user utterance yields at
+                    # most one committed final. We don't track turn order
+                    # here, but equality on the text payload covers the two
+                    # cases we care about: (1) the ``turn_is_formatted``
+                    # follow-up message which carries the same text as a
+                    # prior ``end_of_turn``, and (2) a mid-stream reconnect
+                    # where the server replays a final we already emitted.
+                    if event.text == self._last_final_text:
+                        if self._drain_event is not None:
+                            self._drain_event.set()
+                        continue
                     self._last_final_text = event.text
                     self.final_transcript.emit(event.text)
                     # Unblock any pending drain wait in stop_stream.
