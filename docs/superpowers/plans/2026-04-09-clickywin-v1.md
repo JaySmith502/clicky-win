@@ -13,6 +13,7 @@
 **Tech Stack:** Python 3.12, PySide6 (LGPL), `uv` package manager, `sounddevice` (WASAPI mic), `mss` (multi-monitor screen capture), `pynput` (low-level keyboard hook), `httpx` (HTTP + SSE), `websockets` (AssemblyAI v3 streaming), `Pillow` (image encoding + icon), `platformdirs` (config path resolution), `tomllib` (stdlib TOML reader), `pytest` + `ruff` for tests + lint.
 
 **Execution notes:**
+
 - Work happens in a new directory `clicky-py/` inside this workspace, alongside `leanring-buddy/` and `worker/`.
 - Use @superpowers:test-driven-development for every task marked `[TDD]`. For UI / hardware / network-integration tasks (marked `[IMPL]`), write a minimal implementation, then manually verify per the listed acceptance criteria, then commit.
 - Commit after every task. Messages in imperative mood, one-line explaining the "why".
@@ -102,6 +103,7 @@ clicky-py/
 ### Task 1.1: Scaffold `clicky-py/` with `pyproject.toml` and dependency install [IMPL]
 
 **Files:**
+
 - Create: `clicky-py/pyproject.toml`
 - Create: `clicky-py/clicky/__init__.py` (empty)
 - Create: `clicky-py/clicky/__main__.py` (placeholder `print("clicky")`)
@@ -110,6 +112,7 @@ clicky-py/
 **Steps:**
 
 - [ ] **Step 1:** Create `clicky-py/pyproject.toml` with:
+
   ```toml
   [project]
   name = "clicky"
@@ -153,6 +156,7 @@ clicky-py/
   ```
 
 - [ ] **Step 2:** Create minimal `clicky-py/clicky/__init__.py` and `clicky-py/clicky/__main__.py`:
+
   ```python
   # __main__.py
   def main() -> None:
@@ -182,6 +186,7 @@ clicky-py/
 ### Task 1.2: `Config` dataclass with TOML loader and validation [TDD]
 
 **Files:**
+
 - Create: `clicky-py/clicky/config.py`
 - Create: `clicky-py/tests/test_config.py`
 - Create: `clicky-py/config.example.toml`
@@ -191,6 +196,7 @@ Reference: PRD § Implementation Decisions → Config. The config file shape is 
 **Steps:**
 
 - [ ] **Step 1:** Write failing tests in `clicky-py/tests/test_config.py`:
+
   ```python
   from pathlib import Path
 
@@ -289,6 +295,7 @@ Reference: PRD § Implementation Decisions → Config. The config file shape is 
 - [ ] **Step 2:** Run `uv run pytest tests/test_config.py -v` from inside `clicky-py/`. Expected: all tests fail with `ModuleNotFoundError: clicky.config`.
 
 - [ ] **Step 3:** Implement `clicky-py/clicky/config.py`:
+
   ```python
   """Config loader for ClickyWin.
 
@@ -395,6 +402,7 @@ Reference: PRD § Implementation Decisions → Config. The config file shape is 
 ### Task 1.3: `ClickyApp` bootstrap with `QApplication` and config resolution [IMPL]
 
 **Files:**
+
 - Create: `clicky-py/clicky/app.py`
 - Modify: `clicky-py/clicky/__main__.py`
 
@@ -403,6 +411,7 @@ Reference: PRD § Implementation Decisions → Presentation layer.
 **Steps:**
 
 - [ ] **Step 1:** Create `clicky-py/clicky/app.py`:
+
   ```python
   """ClickyWin QApplication bootstrap.
 
@@ -476,6 +485,7 @@ Reference: PRD § Implementation Decisions → Presentation layer.
   ```
 
 - [ ] **Step 2:** Update `clicky-py/clicky/__main__.py`:
+
   ```python
   """ClickyWin entry point: `python -m clicky`."""
 
@@ -520,6 +530,7 @@ Reference: PRD § Implementation Decisions → Presentation layer.
 ### Task 1.4: `VoiceState` enum and state broadcaster [IMPL]
 
 **Files:**
+
 - Create: `clicky-py/clicky/state.py`
 
 Reference: Swift `CompanionManager.swift` — look for the voice state enum (likely `VoiceState` or similar with `idle | listening | processing | responding` cases).
@@ -527,6 +538,7 @@ Reference: Swift `CompanionManager.swift` — look for the voice state enum (lik
 **Steps:**
 
 - [ ] **Step 1:** Create `clicky-py/clicky/state.py`:
+
   ```python
   """VoiceState enum — the high-level phase the companion is currently in."""
 
@@ -553,6 +565,7 @@ Reference: Swift `CompanionManager.swift` — look for the voice state enum (lik
 ### Task 1.5: `TrayIcon` with state-colored programmatic icon [IMPL]
 
 **Files:**
+
 - Create: `clicky-py/clicky/icon_factory.py`
 - Create: `clicky-py/clicky/ui/__init__.py`
 - Create: `clicky-py/clicky/ui/tray_icon.py`
@@ -584,6 +597,7 @@ Reference: PRD § Question 14 decision 6 (tray icon color changes by state, no a
 ### Task 1.6: `Panel` frameless window skeleton with tray-anchor positioning [IMPL]
 
 **Files:**
+
 - Create: `clicky-py/clicky/ui/panel.py`
 
 Reference: Swift `MenuBarPanelManager.swift` (panel positioning near status item) and `CompanionPanelView.swift` (panel content). PRD § Q14c5 (panel behavior).
@@ -609,6 +623,7 @@ Reference: Swift `MenuBarPanelManager.swift` (panel positioning near status item
 ### Task 1.7: `HotkeyMonitor` with strict modifier-only Ctrl+Alt detection [IMPL]
 
 **Files:**
+
 - Create: `clicky-py/clicky/hotkey.py`
 
 Reference: Swift `GlobalPushToTalkShortcutMonitor.swift`. PRD § Question 5c (strict modifier-only semantics).
@@ -640,6 +655,7 @@ Reference: Swift `GlobalPushToTalkShortcutMonitor.swift`. PRD § Question 5c (st
 ### Task 1.8: Wire tray + panel + hotkey together in `app.py`, manually verify Phase 1 [IMPL]
 
 **Files:**
+
 - Modify: `clicky-py/clicky/app.py`
 - Modify: `clicky-py/clicky/__main__.py`
 
@@ -691,6 +707,7 @@ Reference: Swift `GlobalPushToTalkShortcutMonitor.swift`. PRD § Question 5c (st
 ### Task 2.1: `MicCapture` with `sounddevice` WASAPI stream [IMPL]
 
 **Files:**
+
 - Create: `clicky-py/clicky/mic_capture.py`
 
 Reference: Swift `BuddyDictationManager.swift` and `BuddyAudioConversionSupport.swift`. PRD § Question 6a + 6c (sounddevice, 16 kHz PCM16 mono, 100 ms chunks).
@@ -721,6 +738,7 @@ Reference: Swift `BuddyDictationManager.swift` and `BuddyAudioConversionSupport.
 ### Task 2.2: `WaveformView` custom paint widget [IMPL]
 
 **Files:**
+
 - Create: `clicky-py/clicky/ui/waveform_view.py`
 
 Reference: PRD § Question 14 waveform implementation sketch.
@@ -746,6 +764,7 @@ Reference: PRD § Question 14 waveform implementation sketch.
 ### Task 2.3: Wire `MicCapture` ↔ `WaveformView` via `Panel`, Phase 2 manual verify [IMPL]
 
 **Files:**
+
 - Modify: `clicky-py/clicky/ui/panel.py`
 - Modify: `clicky-py/clicky/app.py`
 
@@ -813,6 +832,7 @@ Reference: PRD § Question 14 waveform implementation sketch.
 ### Task 3.2: `TranscriptionClient` message parser [TDD]
 
 **Files:**
+
 - Create: `clicky-py/clicky/clients/__init__.py`
 - Create: `clicky-py/clicky/clients/transcription_client.py`
 - Create: `clicky-py/tests/test_transcription_parser.py`
@@ -827,6 +847,7 @@ Reference: Swift `AssemblyAIStreamingTranscriptionProvider.swift` — note the e
 - [ ] **Step 2:** Create `clicky-py/clicky/clients/__init__.py` (empty).
 
 - [ ] **Step 3:** Write failing tests in `clicky-py/tests/test_transcription_parser.py`:
+
   ```python
   import json
   from pathlib import Path
@@ -895,6 +916,7 @@ Reference: Swift `AssemblyAIStreamingTranscriptionProvider.swift` — note the e
 ### Task 3.3: `TranscriptionClient` websocket lifecycle [IMPL]
 
 **Files:**
+
 - Modify: `clicky-py/clicky/clients/transcription_client.py`
 
 Reference: Swift `AssemblyAIStreamingTranscriptionProvider.swift` for the token dance, URL format, binary frame protocol, and reconnect strategy.
@@ -930,6 +952,7 @@ Reference: Swift `AssemblyAIStreamingTranscriptionProvider.swift` for the token 
 ### Task 3.4: `TranscriptView` widget [IMPL]
 
 **Files:**
+
 - Create: `clicky-py/clicky/ui/transcript_view.py`
 
 **Steps:**
@@ -952,6 +975,7 @@ Reference: Swift `AssemblyAIStreamingTranscriptionProvider.swift` for the token 
 ### Task 3.5: Wire transcription into panel and app orchestration, Phase 3 manual verify [IMPL]
 
 **Files:**
+
 - Modify: `clicky-py/clicky/ui/panel.py`
 - Modify: `clicky-py/clicky/app.py`
 
@@ -971,7 +995,7 @@ Reference: Swift `AssemblyAIStreamingTranscriptionProvider.swift` for the token 
 
 - [ ] **Step 3:** Manual verification:
   - Run `uv run python -m clicky`.
-  - Hold Ctrl+Alt, say *"testing one two three, can you hear me?"*, release.
+  - Hold Ctrl+Alt, say _"testing one two three, can you hear me?"_, release.
   - Expected: interim transcript appears in the panel as you speak; final transcript replaces it on release. Stderr logs the final text.
   - Disconnect from wifi, try again. Expected: stderr logs a transcription error.
 
@@ -994,6 +1018,7 @@ Reference: Swift `AssemblyAIStreamingTranscriptionProvider.swift` for the token 
 ### Task 4.1: `ScreenCapture` label composer [TDD]
 
 **Files:**
+
 - Create: `clicky-py/tests/test_screen_capture_labels.py`
 - Create: `clicky-py/clicky/screen_capture.py`
 
@@ -1002,6 +1027,7 @@ Reference: Swift `CompanionScreenCaptureUtility.swift` lines 104–111 for the e
 **Steps:**
 
 - [ ] **Step 1:** Write failing tests in `clicky-py/tests/test_screen_capture_labels.py`:
+
   ```python
   from clicky.screen_capture import compose_screen_label
 
@@ -1053,6 +1079,7 @@ Reference: Swift `CompanionScreenCaptureUtility.swift` lines 104–111 for the e
 ### Task 4.2: `ScreenCapture.capture()` via `mss` + Pillow downscale [IMPL]
 
 **Files:**
+
 - Modify: `clicky-py/clicky/screen_capture.py`
 - Modify: `clicky-py/clicky/app.py` (add DPI awareness call)
 
@@ -1061,6 +1088,7 @@ Reference: Swift `CompanionScreenCaptureUtility.swift` for the 1280-px long-edge
 **Steps:**
 
 - [ ] **Step 1:** In `app.py`, at the very top of `bootstrap()` (before `QApplication` creation), add:
+
   ```python
   import ctypes
   import sys
@@ -1076,6 +1104,7 @@ Reference: Swift `CompanionScreenCaptureUtility.swift` for the 1280-px long-edge
       except (AttributeError, OSError):
           pass
   ```
+
   This is critical — it must run before any Qt or mss calls.
 
 - [ ] **Step 2:** Extend `screen_capture.py`:
@@ -1101,6 +1130,7 @@ Reference: Swift `CompanionScreenCaptureUtility.swift` for the 1280-px long-edge
 ### Task 4.3: `ConversationHistory` module [TDD]
 
 **Files:**
+
 - Create: `clicky-py/clicky/conversation_history.py`
 - Create: `clicky-py/tests/test_conversation_history.py`
 
@@ -1109,6 +1139,7 @@ Reference: PRD § Implementation Decisions → ConversationHistory.
 **Steps:**
 
 - [ ] **Step 1:** Write failing tests in `clicky-py/tests/test_conversation_history.py`:
+
   ```python
   from clicky.conversation_history import ConversationHistory, MAX_TURNS
 
@@ -1166,6 +1197,7 @@ Reference: PRD § Implementation Decisions → ConversationHistory.
 - [ ] **Step 2:** Run tests. Expected: fail.
 
 - [ ] **Step 3:** Implement `clicky-py/clicky/conversation_history.py`:
+
   ```python
   """In-memory conversation history for the Claude client.
 
@@ -1228,6 +1260,7 @@ Reference: PRD § Implementation Decisions → ConversationHistory.
 ### Task 4.4: `LLMClient` SSE parser [TDD]
 
 **Files:**
+
 - Create: `clicky-py/clicky/clients/llm_client.py`
 - Create: `clicky-py/tests/test_llm_sse_parser.py`
 - Create: `clicky-py/tests/fixtures/anthropic_sse_basic.txt`
@@ -1240,6 +1273,7 @@ Reference: Anthropic streaming documentation + Swift `ClaudeAPI.swift`. Record a
 - [ ] **Step 1:** Create the fixture files. `anthropic_sse_basic.txt` should contain a full SSE stream with: `message_start`, `content_block_start` (text), multiple `content_block_delta` (text_delta) events, `content_block_stop`, `message_delta`, `message_stop`. `anthropic_sse_unknown_block.txt` should contain an SSE stream with a `content_block_start` carrying an unknown `type` (e.g. `"type": "some_future_block"`), a delta for it, and its stop event, followed by a normal text block — to verify defensive parsing.
 
 - [ ] **Step 2:** Write failing tests in `clicky-py/tests/test_llm_sse_parser.py`:
+
   ```python
   from pathlib import Path
 
@@ -1290,6 +1324,7 @@ Reference: Anthropic streaming documentation + Swift `ClaudeAPI.swift`. Record a
 ### Task 4.5: `LLMClient.send()` full streaming request [IMPL]
 
 **Files:**
+
 - Modify: `clicky-py/clicky/clients/llm_client.py`
 
 Reference: Swift `ClaudeAPI.swift` for the request shape (endpoint path, headers, body structure).
@@ -1319,6 +1354,7 @@ Reference: Swift `ClaudeAPI.swift` for the request shape (endpoint path, headers
 ### Task 4.6: System prompt constant with Windows-retargeted examples [IMPL]
 
 **Files:**
+
 - Create: `clicky-py/clicky/prompts.py`
 
 Reference: Swift `CompanionManager.swift` lines 544–577 (the non-pointing portion of `companionVoiceResponseSystemPrompt`; the full string runs to line ~581 but the pointing section is cut in v1).
@@ -1326,6 +1362,7 @@ Reference: Swift `CompanionManager.swift` lines 544–577 (the non-pointing port
 **Steps:**
 
 - [ ] **Step 1:** Create `clicky-py/clicky/prompts.py`:
+
   ```python
   """System prompts for ClickyWin.
 
@@ -1371,6 +1408,7 @@ Reference: Swift `CompanionManager.swift` lines 544–577 (the non-pointing port
 ### Task 4.7: `ResponseView` widget [IMPL]
 
 **Files:**
+
 - Create: `clicky-py/clicky/ui/response_view.py`
 
 **Steps:**
@@ -1392,6 +1430,7 @@ Reference: Swift `CompanionManager.swift` lines 544–577 (the non-pointing port
 ### Task 4.8: `CompanionManager` orchestration state machine [IMPL]
 
 **Files:**
+
 - Create: `clicky-py/clicky/companion_manager.py`
 
 Reference: Swift `CompanionManager.swift` — this is the biggest port. Read the Swift file top to bottom first.
@@ -1411,16 +1450,16 @@ Reference: Swift `CompanionManager.swift` — this is the biggest port. Read the
     - `_on_hotkey_pressed()`: if state is not IDLE, interrupt (set `_cancel_flag=True`, cancel `_current_task`, stop TTS — TTS added Phase 5). Transition to LISTENING. Start mic. Start transcription stream.
     - `_on_hotkey_released()`: transition to PROCESSING. Stop mic. Call `transcription.stop_stream()` (which will drain and emit `final_transcript` per the contract in Task 3.3).
     - `_on_final_transcript(text: str)`: if text is empty, return to IDLE silently (no error, no Claude call — covers the "pressed and released without speaking" case). Otherwise:
-        1. Set `_cancel_flag = False` for this new turn.
-        2. Call `panel_visibility_controller.hide_for_capture()` to make the panel invisible.
-        3. Call `screen_capture_fn()` to grab JPEGs — no await here since `mss` is sync; wrap in `asyncio.to_thread(...)` if we keep the async signature.
-        4. Call `panel_visibility_controller.restore_after_capture()` to bring the panel back.
-        5. Base64-encode each `ScreenshotImage.jpeg_bytes` and build Claude image content blocks: `{"type":"image","source":{"type":"base64","media_type":"image/jpeg","data":base64_str}}` with a preceding text block for the label.
-        6. Build messages via `history.messages_for_request(current_user_text=text, current_images=image_blocks)`.
-        7. Start `llm.send(...)` as a task stored in `_current_task`.
-        8. Relay `llm.delta` signals through `response_delta` AS LONG AS `_cancel_flag` is False. If `_cancel_flag` flips True mid-stream, stop relaying.
-        9. On `llm.done(full_text)`: **only if `_cancel_flag` is False**, append `(text, full_text)` to history AND emit `response_complete(full_text)`. If cancelled, DO NOT append to history and DO NOT emit complete.
-        10. Transition to RESPONDING while streaming, then IDLE on completion or cancel. On successful completion, emit `success_turn_completed()` so banners can auto-clear.
+      1. Set `_cancel_flag = False` for this new turn.
+      2. Call `panel_visibility_controller.hide_for_capture()` to make the panel invisible.
+      3. Call `screen_capture_fn()` to grab JPEGs — no await here since `mss` is sync; wrap in `asyncio.to_thread(...)` if we keep the async signature.
+      4. Call `panel_visibility_controller.restore_after_capture()` to bring the panel back.
+      5. Base64-encode each `ScreenshotImage.jpeg_bytes` and build Claude image content blocks: `{"type":"image","source":{"type":"base64","media_type":"image/jpeg","data":base64_str}}` with a preceding text block for the label.
+      6. Build messages via `history.messages_for_request(current_user_text=text, current_images=image_blocks)`.
+      7. Start `llm.send(...)` as a task stored in `_current_task`.
+      8. Relay `llm.delta` signals through `response_delta` AS LONG AS `_cancel_flag` is False. If `_cancel_flag` flips True mid-stream, stop relaying.
+      9. On `llm.done(full_text)`: **only if `_cancel_flag` is False**, append `(text, full_text)` to history AND emit `response_complete(full_text)`. If cancelled, DO NOT append to history and DO NOT emit complete.
+      10. Transition to RESPONDING while streaming, then IDLE on completion or cancel. On successful completion, emit `success_turn_completed()` so banners can auto-clear.
     - `_on_hotkey_cancelled()`: same as released but the transcription will emit an empty final_transcript (because we never completed a turn).
     - `_on_error(msg: str)`: emit error, transition to IDLE. Do NOT emit `success_turn_completed`.
   - Wires all component signals in its `__init__`.
@@ -1436,6 +1475,7 @@ Reference: Swift `CompanionManager.swift` — this is the biggest port. Read the
 ### Task 4.9: Wire CompanionManager into app, Phase 4 manual verify [IMPL]
 
 **Files:**
+
 - Modify: `clicky-py/clicky/app.py`
 - Modify: `clicky-py/clicky/ui/panel.py`
 
@@ -1456,12 +1496,12 @@ Reference: Swift `CompanionManager.swift` — this is the biggest port. Read the
 - [ ] **Step 3:** Manual verification:
   - Run `uv run python -m clicky`.
   - Open DaVinci Resolve (or any visually distinctive app).
-  - Hold Ctrl+Alt, ask *"what am i looking at? give me a one-sentence summary"*, release.
+  - Hold Ctrl+Alt, ask _"what am i looking at? give me a one-sentence summary"_, release.
   - Expected: waveform during hold, transcript appears on release, "processing" state briefly, then Claude's text response streams into the panel.
   - **Critical panel-exclusion check:** in Claude's response, verify it describes DaVinci (or whatever app you have open), NOT the ClickyWin panel itself. If Claude says "I see a dark panel labeled ClickyWin" or similar, the `hide_for_capture` step is not working — debug until the panel is excluded from the screenshot.
   - Optionally: add a temporary debug line in `companion_manager.py` that saves captured JPEGs to `%TEMP%\clicky-debug-*.jpg` and open them in an image viewer to visually confirm the panel is not in the frame. Remove the debug line before committing.
-  - Follow up: hold Ctrl+Alt and ask *"and what's the first thing i should click?"* (testing memory). Expected: Claude answers in DaVinci context, proving conversation history works.
-  - Ask a deliberately unrelated question *"what's the capital of france?"*. Expected: Claude answers directly without over-referencing the screenshot.
+  - Follow up: hold Ctrl+Alt and ask _"and what's the first thing i should click?"_ (testing memory). Expected: Claude answers in DaVinci context, proving conversation history works.
+  - Ask a deliberately unrelated question _"what's the capital of france?"_. Expected: Claude answers directly without over-referencing the screenshot.
 
 - [ ] **Step 4:** Commit:
   ```bash
@@ -1482,6 +1522,7 @@ Reference: Swift `CompanionManager.swift` — this is the biggest port. Read the
 ### Task 5.1: `TTSClient` module [IMPL]
 
 **Files:**
+
 - Create: `clicky-py/clicky/clients/tts_client.py`
 
 Reference: Swift `ElevenLabsTTSClient.swift`.
@@ -1514,6 +1555,7 @@ Reference: Swift `ElevenLabsTTSClient.swift`.
 ### Task 5.2: Wire TTS into CompanionManager and add interrupt handling [IMPL]
 
 **Files:**
+
 - Modify: `clicky-py/clicky/companion_manager.py`
 - Modify: `clicky-py/clicky/app.py`
 
@@ -1553,6 +1595,7 @@ Reference: Swift `ElevenLabsTTSClient.swift`.
 ### Task 6.1: `StatusBanner` widget + error routing [IMPL]
 
 **Files:**
+
 - Create: `clicky-py/clicky/ui/status_banner.py`
 - Modify: `clicky-py/clicky/ui/panel.py`
 - Modify: `clicky-py/clicky/app.py`
@@ -1578,6 +1621,7 @@ Reference: Swift `ElevenLabsTTSClient.swift`.
 ### Task 6.2: `logging_config` module with rotating file handler [IMPL]
 
 **Files:**
+
 - Create: `clicky-py/clicky/logging_config.py`
 - Modify: `clicky-py/clicky/app.py`
 
@@ -1607,6 +1651,7 @@ Reference: Swift `ElevenLabsTTSClient.swift`.
 ### Task 6.3: First-run detection + config-invalid banner [IMPL]
 
 **Files:**
+
 - Modify: `clicky-py/clicky/app.py`
 - Modify: `clicky-py/clicky/ui/panel.py`
 
@@ -1633,6 +1678,7 @@ Reference: Swift `ElevenLabsTTSClient.swift`.
 ### Task 6.4: `ModelPicker` widget [IMPL]
 
 **Files:**
+
 - Create: `clicky-py/clicky/ui/model_picker.py`
 - Modify: `clicky-py/clicky/ui/panel.py`
 - Modify: `clicky-py/clicky/app.py`
@@ -1661,6 +1707,7 @@ Reference: Swift `ElevenLabsTTSClient.swift`.
 ### Task 6.5: `design_system` token module [IMPL]
 
 **Files:**
+
 - Create: `clicky-py/clicky/design_system.py`
 - Modify: widgets to pull colors/radii from `DS.*`
 
@@ -1685,6 +1732,7 @@ Reference: Swift `DesignSystem.swift` (~880 lines). Port only the tokens our wid
 ### Task 6.6: Tray icon state colors + permissions indicator [IMPL]
 
 **Files:**
+
 - Modify: `clicky-py/clicky/ui/tray_icon.py`
 - Create: `clicky-py/clicky/ui/permissions_indicator.py`
 - Modify: `clicky-py/clicky/ui/panel.py`
@@ -1719,6 +1767,7 @@ Reference: Swift `DesignSystem.swift` (~880 lines). Port only the tokens our wid
 ### Task 7.1: POINT tag parser for v2 prep [TDD]
 
 **Files:**
+
 - Create: `clicky-py/clicky/point_parser.py`
 - Create: `clicky-py/tests/test_point_parser.py`
 
@@ -1756,6 +1805,7 @@ Reference: Swift `CompanionManager.swift` lines 782–800 (`parsePointingCoordin
 ### Task 7.2: PyInstaller spec and build [IMPL]
 
 **Files:**
+
 - Create: `clicky-py/clicky.spec`
 - Create: `clicky-py/README.md`
 
@@ -1788,6 +1838,7 @@ Reference: Swift `CompanionManager.swift` lines 782–800 (`parsePointingCoordin
   - **License notice:** MIT, references `clicky-py/LICENSE`.
 
 - [ ] **Step 6:** Create `clicky-py/LICENSE` — MIT license text preserving Farza's copyright line from `LICENSE` at workspace root AND adding a new copyright line for the Python port. Format:
+
   ```
   MIT License
 
@@ -1796,6 +1847,7 @@ Reference: Swift `CompanionManager.swift` lines 782–800 (`parsePointingCoordin
 
   Permission is hereby granted, ...
   ```
+
   Satisfies PRD user story 40.
 
 - [ ] **Step 7:** Commit:
@@ -1815,14 +1867,15 @@ Reference: Swift `CompanionManager.swift` lines 782–800 (`parsePointingCoordin
 - [ ] **Step 1:** Fresh run through the full user journey:
   - Open DaVinci Resolve (or Blender, or Photoshop — anything visually distinctive).
   - Launch ClickyWin from `dist/clicky/ClickyWin.exe`.
-  - Hold Ctrl+Alt and ask *"i just opened this, how do i start color grading?"*.
+  - Hold Ctrl+Alt and ask _"i just opened this, how do i start color grading?"_.
   - Verify: waveform shows, interim transcript appears, final transcript appears, response streams in panel, voice plays, full turn completes.
-  - Follow up: *"which color wheel should i touch first?"* (tests memory).
+  - Follow up: _"which color wheel should i touch first?"_ (tests memory).
   - Switch to Sonnet → ask a quick factual question, then switch to Opus → ask a deeper "explain how X works under the hood" question. Verify both models work.
   - Interrupt mid-response: press Ctrl+Alt while TTS is playing, ask a new question, verify clean cut-over.
   - Trigger an error: disable wifi, ask a question, verify red banner; re-enable wifi, ask again, verify banner clears and response works.
 
 - [ ] **Step 2:** If all scenarios pass, tag the v1 commit:
+
   ```bash
   git tag -a clickywin-v1.0.0 -m "ClickyWin v1 — voice tutor for Windows learners"
   ```
@@ -1835,15 +1888,15 @@ Reference: Swift `CompanionManager.swift` lines 782–800 (`parsePointingCoordin
 
 At plan completion, test suite contents:
 
-| Test file | Module tested | Test count target |
-|---|---|---|
-| `test_config.py` | `Config` TOML loader + validation + first-run | 6–8 |
-| `test_conversation_history.py` | `ConversationHistory` | 4 |
-| `test_llm_sse_parser.py` | Anthropic SSE parser incl. defensive unknown-block | 3 |
-| `test_transcription_parser.py` | AssemblyAI v3 message parser | 5 |
-| `test_screen_capture_labels.py` | `compose_screen_label` | 4 |
-| `test_point_parser.py` | `parse_point_tag` (v2 prep) | 6 |
-| **Total** | | **28–30 tests, sub-second runtime** |
+| Test file                       | Module tested                                      | Test count target                   |
+| ------------------------------- | -------------------------------------------------- | ----------------------------------- |
+| `test_config.py`                | `Config` TOML loader + validation + first-run      | 6–8                                 |
+| `test_conversation_history.py`  | `ConversationHistory`                              | 4                                   |
+| `test_llm_sse_parser.py`        | Anthropic SSE parser incl. defensive unknown-block | 3                                   |
+| `test_transcription_parser.py`  | AssemblyAI v3 message parser                       | 5                                   |
+| `test_screen_capture_labels.py` | `compose_screen_label`                             | 4                                   |
+| `test_point_parser.py`          | `parse_point_tag` (v2 prep)                        | 6                                   |
+| **Total**                       |                                                    | **28–30 tests, sub-second runtime** |
 
 Run with `uv run pytest` from `clicky-py/`. Run `uv run ruff check . && uv run ruff format --check .` before every commit.
 

@@ -23,6 +23,7 @@ from PySide6.QtGui import (
     QShowEvent,
 )
 from PySide6.QtWidgets import (
+    QApplication,
     QLabel,
     QSystemTrayIcon,
     QVBoxLayout,
@@ -30,6 +31,7 @@ from PySide6.QtWidgets import (
 )
 
 from clicky.state import VoiceState
+from clicky.ui.response_view import ResponseView
 from clicky.ui.transcript_view import TranscriptView
 from clicky.ui.waveform_view import WaveformView
 
@@ -78,6 +80,10 @@ class Panel(QWidget):
         self.transcript = TranscriptView(self)
         self.transcript.hide()
 
+        # Public: app.py wires CompanionManager response signals here.
+        self.response = ResponseView(self)
+        self.response.hide()
+
         self._placeholder = QLabel("ClickyWin \u2014 Hold Ctrl+Alt to talk")
         self._placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._placeholder.setStyleSheet(
@@ -85,6 +91,7 @@ class Panel(QWidget):
         )
         layout.addWidget(self._waveform)
         layout.addWidget(self.transcript)
+        layout.addWidget(self.response)
         layout.addStretch(1)
         layout.addWidget(self._placeholder)
         layout.addStretch(1)
@@ -95,27 +102,47 @@ class Panel(QWidget):
     def set_state(self, state: VoiceState) -> None:
         """Update panel sub-views to reflect the given voice state.
 
-        LISTENING: waveform + transcript visible, waveform timer running.
-        PROCESSING: waveform hidden (timer stopped), transcript stays visible.
-        IDLE: everything hidden, transcript cleared.
+        LISTENING:  waveform + transcript visible, response hidden.
+        PROCESSING: waveform hidden, transcript visible, response hidden.
+        RESPONDING: waveform hidden, transcript + response visible.
+        IDLE:       everything hidden, transcript + response cleared.
         """
         if state is VoiceState.LISTENING:
             self._waveform.show()
             self._waveform.start()
             self.transcript.show()
+            self.response.hide()
         elif state is VoiceState.PROCESSING:
             self._waveform.stop()
             self._waveform.hide()
             self.transcript.show()
+            self.response.hide()
+        elif state is VoiceState.RESPONDING:
+            self._waveform.stop()
+            self._waveform.hide()
+            self.transcript.show()
+            self.response.show()
         else:
             self._waveform.stop()
             self._waveform.hide()
             self.transcript.hide()
             self.transcript.clear()
+            self.response.hide()
+            self.response.clear()
 
     def set_audio_level(self, level: float) -> None:
         """Forward a mic RMS level (in [0, 1]) to the waveform."""
         self._waveform.push_level(level)
+
+    # ------------------------------------------------------------------
+    # PanelVisibilityController protocol (used by CompanionManager)
+    # ------------------------------------------------------------------
+    def hide_for_capture(self) -> None:
+        self.setWindowOpacity(0.0)
+        QApplication.processEvents()
+
+    def restore_after_capture(self) -> None:
+        self.setWindowOpacity(1.0)
 
     # ------------------------------------------------------------------
     # Qt event overrides
