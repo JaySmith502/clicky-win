@@ -170,6 +170,10 @@ def run() -> int:
             panel_visibility_controller=panel,
         )
 
+        # Model picker → initial value + live changes
+        panel.model_picker.set_model(result.config.default_model)
+        panel.model_picker.model_changed.connect(manager.set_model)
+
         # State → panel + tray
         manager.state_changed.connect(panel.set_state)
         manager.state_changed.connect(tray_icon.set_state)

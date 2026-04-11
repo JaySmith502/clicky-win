@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 )
 
 from clicky.state import VoiceState
+from clicky.ui.model_picker import ModelPicker
 from clicky.ui.response_view import ResponseView
 from clicky.ui.status_banner import StatusBanner
 from clicky.ui.transcript_view import TranscriptView
@@ -99,6 +100,10 @@ class Panel(QWidget):
         layout.addStretch(1)
         layout.addWidget(self._placeholder)
         layout.addStretch(1)
+
+        # Public: app.py sets initial model and connects model_changed.
+        self.model_picker = ModelPicker(self)
+        layout.addWidget(self.model_picker)
 
     # ------------------------------------------------------------------
     # state / audio wiring
