@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -109,12 +110,21 @@ def run() -> int:
         logger.info("first run: created config at %s", result.config_path)
 
     if result.config_error is not None:
-        # Phase 1: log to stderr and proceed. Phase 2+ will surface this
-        # as a banner inside the panel.
         logger.warning("config error: %s", result.config_error)
 
     tray_icon = TrayIcon(initial_state=VoiceState.IDLE)
     panel = Panel()
+
+    if result.config_error is not None:
+        panel.show_near_tray(tray_icon)
+        panel.banner.show_warning(
+            f"Invalid config: {result.config_error}",
+            action_label="Open config",
+            on_action=lambda: os.startfile(result.config_path),
+        )
+    elif result.was_first_run and result.config is not None:
+        panel.banner.show_info(f"Press Ctrl+Alt to talk. Config at {result.config_path}")
+
     mic = MicCapture()
 
     mic.audio_level.connect(panel.set_audio_level)
