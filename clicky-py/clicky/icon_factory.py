@@ -12,16 +12,17 @@ from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
 from PySide6.QtGui import QIcon, QPixmap
 
+from clicky.design_system import DS
 from clicky.state import VoiceState
 
 _RENDER_SIZE = 64
 
 STATE_COLORS: dict[str, str] = {
-    VoiceState.IDLE.value: "#2E86FF",
-    VoiceState.LISTENING.value: "#28C76F",
-    VoiceState.PROCESSING.value: "#2E86FF",
-    VoiceState.RESPONDING.value: "#F5A623",
-    "error": "#EA5455",
+    VoiceState.IDLE.value: DS.Colors.accent_blue,
+    VoiceState.LISTENING.value: DS.Colors.accent_green,
+    VoiceState.PROCESSING.value: DS.Colors.accent_blue,
+    VoiceState.RESPONDING.value: DS.Colors.accent_amber,
+    "error": DS.Colors.error_red,
 }
 
 

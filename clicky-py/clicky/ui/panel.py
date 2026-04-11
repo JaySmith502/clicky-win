@@ -32,6 +32,7 @@ from PySide6.QtWidgets import (
 from clicky.design_system import DS
 from clicky.state import VoiceState
 from clicky.ui.model_picker import ModelPicker
+from clicky.ui.permissions_indicator import PermissionsIndicator
 from clicky.ui.response_view import ResponseView
 from clicky.ui.status_banner import StatusBanner
 from clicky.ui.transcript_view import TranscriptView
@@ -105,6 +106,10 @@ class Panel(QWidget):
         # Public: app.py sets initial model and connects model_changed.
         self.model_picker = ModelPicker(self)
         layout.addWidget(self.model_picker)
+
+        # Public: app.py wires mic.error to set_mic_status(False).
+        self.permissions = PermissionsIndicator(self)
+        layout.addWidget(self.permissions)
 
     # ------------------------------------------------------------------
     # state / audio wiring

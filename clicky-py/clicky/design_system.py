@@ -33,6 +33,9 @@ class DS:
         warning_bg = "#8B6508"
         info_bg = "#1a3a5c"
 
+        # Error
+        error_red = "#EA5455"
+
         # Borders
         border = "#444444"
 
