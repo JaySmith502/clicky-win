@@ -16,10 +16,12 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from clicky.design_system import DS
+
 _COLORS = {
-    "error": "#8B0000",
-    "warning": "#8B6508",
-    "info": "#1a3a5c",
+    "error": DS.Colors.error_bg,
+    "warning": DS.Colors.warning_bg,
+    "info": DS.Colors.info_bg,
 }
 
 
@@ -35,13 +37,13 @@ class StatusBanner(QWidget):
 
         self._label = QLabel()
         self._label.setWordWrap(True)
-        self._label.setStyleSheet("color: white; font-size: 13px;")
+        self._label.setStyleSheet(f"color: {DS.Colors.text_white}; font-size: 13px;")
         layout.addWidget(self._label, stretch=1)
 
         self._action_btn = QPushButton()
         self._action_btn.setStyleSheet(
-            "color: white; background: transparent; border: 1px solid white;"
-            " border-radius: 4px; padding: 4px 10px; font-size: 12px;"
+            f"color: {DS.Colors.text_white}; background: transparent; border: 1px solid {DS.Colors.text_white};"
+            f" border-radius: {DS.CornerRadius.xs}px; padding: {DS.Spacing.xs}px 10px; font-size: {DS.Fonts.size_sm}px;"
         )
         self._action_btn.hide()
         layout.addWidget(self._action_btn)
@@ -91,7 +93,7 @@ class StatusBanner(QWidget):
     ) -> None:
         bg = _COLORS[mode]
         self.setStyleSheet(
-            f"background-color: {bg}; border-radius: 8px;"
+            f"background-color: {bg}; border-radius: {DS.CornerRadius.small}px;"
         )
         self._label.setText(text)
 

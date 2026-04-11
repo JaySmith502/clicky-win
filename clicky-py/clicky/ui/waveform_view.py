@@ -13,8 +13,10 @@ from PySide6.QtCore import Qt, QTimer, Slot
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPaintEvent
 from PySide6.QtWidgets import QWidget
 
+from clicky.design_system import DS
+
 _BAR_COUNT = 60
-_ACCENT_BLUE = QColor("#2E86FF")
+_ACCENT_BLUE = QColor(DS.Colors.waveform_bar)
 _BAR_FILL_FRACTION = 0.6
 _BAR_HEIGHT_FRACTION = 0.9
 _BAR_CORNER_RADIUS = 2.0
