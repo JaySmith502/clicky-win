@@ -36,6 +36,13 @@ class DS:
         # Error
         error_red = "#EA5455"
 
+        # Companion state colors
+        companion_idle = "#4a9eff"       # blue
+        companion_listening = "#4a9eff"  # blue (opacity changes)
+        companion_processing = "#f5a623" # amber
+        companion_responding = "#34d399" # green
+        companion_error = "#ef4444"      # red
+
         # Borders
         border = "#444444"
 
