@@ -180,10 +180,12 @@ def run() -> int:
             lambda text: print(f"[clicky] response complete: {text[:120]}", file=sys.stderr)
         )
 
-        # Errors → stderr
+        # Errors → stderr + banner
         manager.error.connect(
             lambda msg: print(f"[clicky] error: {msg}", file=sys.stderr)
         )
+        manager.error.connect(panel.banner.show_error)
+        manager.success_turn_completed.connect(panel.banner.clear)
 
         # Show panel near tray when entering LISTENING
         manager.state_changed.connect(
