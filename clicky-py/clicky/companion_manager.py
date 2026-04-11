@@ -251,11 +251,22 @@ class CompanionManager(QObject):
         via ``_cancel_flag`` (cooperative) and ``task.cancel()`` (hard).
         """
         try:
+            # Yield control so stop_stream (which is still draining after
+            # the recv loop emitted final_transcript synchronously) can
+            # finish before we do any work that pumps the Qt event loop
+            # (hide_for_capture calls processEvents, which would re-enter
+            # the stop_stream task and trigger a RuntimeError).
+            await asyncio.sleep(0)
+
             # Emit the final transcript so the UI can display it.
             self.final_transcript.emit(text)
 
             # Hide the panel so it doesn't appear in the screenshot.
+            # The async sleep lets qasync process the Qt opacity change
+            # AND lets pending asyncio tasks (stop_stream cleanup) settle
+            # — avoids re-entrancy that processEvents() would cause.
             self._panel_visibility_controller.hide_for_capture()
+            await asyncio.sleep(0.05)
             try:
                 screenshots = await asyncio.to_thread(self._screen_capture_fn)
             finally:
@@ -301,11 +312,12 @@ class CompanionManager(QObject):
 
         except asyncio.CancelledError:
             logger.debug("turn cancelled")
-            # Do NOT append to history or emit complete.
+            self._set_state(VoiceState.IDLE)
 
         except Exception as exc:  # noqa: BLE001
             logger.error("turn pipeline error: %s", exc)
             self.error.emit(str(exc))
-
-        finally:
             self._set_state(VoiceState.IDLE)
+
+        # On success, stay in RESPONDING so the response text remains
+        # visible until the next hotkey press resets to LISTENING.

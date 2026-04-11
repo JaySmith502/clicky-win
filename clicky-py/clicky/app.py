@@ -8,7 +8,6 @@ the resulting Config for downstream components to read.
 from __future__ import annotations
 
 import asyncio
-import ctypes
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -50,11 +49,11 @@ def _example_config_path() -> Path:
 
 
 def bootstrap(argv: list[str] | None = None) -> BootstrapResult:
-    if sys.platform == "win32":
-        try:
-            ctypes.windll.shcore.SetProcessDpiAwareness(2)  # PROCESS_PER_MONITOR_DPI_AWARE
-        except (AttributeError, OSError):
-            pass
+    # Qt 6 sets PROCESS_PER_MONITOR_DPI_AWARE_V2 internally during
+    # QApplication init — calling SetProcessDpiAwareness ourselves is
+    # redundant and raises "Access is denied" if Qt gets there first.
+    # mss captures at raw physical pixels regardless, so no explicit call
+    # is needed.
 
     argv = argv if argv is not None else sys.argv
     app = QApplication(argv)

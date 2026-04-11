@@ -49,9 +49,6 @@ def parse_anthropic_sse_stream(raw: bytes) -> Iterator[str]:
 
     text = raw.decode("utf-8", errors="replace")
 
-    # Track per-index whether the block is a known text block.
-    block_is_text: dict[int, bool] = {}
-
     # Split on blank lines to get individual SSE events.
     chunks = text.split("\n\n")
 
@@ -72,30 +69,19 @@ def parse_anthropic_sse_stream(raw: bytes) -> Iterator[str]:
         if event_type is None or data_line is None:
             continue
 
+        if event_type != "content_block_delta":
+            continue
+
         try:
             payload = json.loads(data_line)
         except json.JSONDecodeError:
             continue
 
-        if event_type == "content_block_start":
-            index: int = payload.get("index", 0)
-            content_block = payload.get("content_block", {})
-            block_type = content_block.get("type", "")
-            block_is_text[index] = block_type == "text"
-
-        elif event_type == "content_block_delta":
-            index = payload.get("index", 0)
-            # If block is unknown, skip silently.
-            if not block_is_text.get(index, False):
-                continue
-            delta = payload.get("delta", {})
-            if delta.get("type") == "text_delta":
-                text_fragment = delta.get("text", "")
-                if text_fragment:
-                    yield text_fragment
-
-        # All other event types (message_start, message_delta, message_stop,
-        # content_block_stop, ping) are intentionally ignored.
+        delta = payload.get("delta", {})
+        if delta.get("type") == "text_delta":
+            text_fragment = delta.get("text", "")
+            if text_fragment:
+                yield text_fragment
 
 
 class LLMClient(QObject):
@@ -159,7 +145,7 @@ class LLMClient(QObject):
         buf = b""
 
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=60.0) as client:
                 async with client.stream("POST", url, json=body) as response:
                     response.raise_for_status()
 
