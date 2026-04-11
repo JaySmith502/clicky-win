@@ -181,9 +181,11 @@ def run() -> int:
         # State → panel + tray
         manager.state_changed.connect(panel.set_state)
         manager.state_changed.connect(tray_icon.set_state)
+        manager.state_changed.connect(companion.set_state)
 
         # Audio level → panel waveform
         manager.audio_level.connect(panel.set_audio_level)
+        manager.audio_level.connect(companion.set_audio_level)
 
         # Transcription → panel transcript
         manager.interim_transcript.connect(panel.transcript.set_interim)
