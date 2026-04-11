@@ -13,6 +13,8 @@ from PySide6.QtCore import Qt, Slot
 from PySide6.QtGui import QTextOption
 from PySide6.QtWidgets import QTextEdit, QVBoxLayout, QWidget
 
+from clicky.design_system import DS
+
 
 class ResponseView(QWidget):
     """Scrollable display for Claude's streaming response text."""
@@ -24,7 +26,7 @@ class ResponseView(QWidget):
         self._edit = QTextEdit(self)
         self._edit.setReadOnly(True)
         self._edit.setWordWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
-        self._edit.setStyleSheet("color: #ffffff; background: transparent;")
+        self._edit.setStyleSheet(f"color: {DS.Colors.text_white}; background: transparent;")
         self._edit.setFrameShape(QTextEdit.Shape.NoFrame)
         self._edit.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
 

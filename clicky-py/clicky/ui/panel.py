@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from clicky.design_system import DS
 from clicky.state import VoiceState
 from clicky.ui.model_picker import ModelPicker
 from clicky.ui.response_view import ResponseView
@@ -36,9 +37,9 @@ from clicky.ui.status_banner import StatusBanner
 from clicky.ui.transcript_view import TranscriptView
 from clicky.ui.waveform_view import WaveformView
 
-_BG_COLOR = "#1a1a1a"
-_TEXT_COLOR = "#e0e0e0"
-_CORNER_RADIUS = 16
+_BG_COLOR = DS.Colors.panel_bg
+_TEXT_COLOR = DS.Colors.text_primary
+_CORNER_RADIUS = DS.CornerRadius.large
 _MIN_WIDTH = 420
 _MIN_HEIGHT = 360
 _TRAY_MARGIN = 8  # px between tray icon and panel edge

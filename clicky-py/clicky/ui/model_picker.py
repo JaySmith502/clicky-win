@@ -5,6 +5,8 @@ from __future__ import annotations
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QWidget
 
+from clicky.design_system import DS
+
 _MODELS = [
     ("Sonnet 4.6", "claude-sonnet-4-6"),
     ("Opus 4.6", "claude-opus-4-6"),
@@ -20,14 +22,14 @@ class ModelPicker(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
 
         label = QLabel("Model:", self)
-        label.setStyleSheet("color: #888888; font-size: 12px;")
+        label.setStyleSheet(f"color: {DS.Colors.text_secondary}; font-size: {DS.Fonts.size_sm}px;")
         layout.addWidget(label)
 
         self._combo = QComboBox(self)
         for display_name, model_id in _MODELS:
             self._combo.addItem(display_name, model_id)
         self._combo.setStyleSheet(
-            "QComboBox { color: #e0e0e0; background: #2a2a2a; border: 1px solid #444; border-radius: 4px; padding: 2px 8px; font-size: 12px; }"
+            f"QComboBox {{ color: {DS.Colors.text_primary}; background: {DS.Colors.surface}; border: 1px solid {DS.Colors.border}; border-radius: {DS.CornerRadius.xs}px; padding: 2px 8px; font-size: {DS.Fonts.size_sm}px; }}"
         )
         self._combo.currentIndexChanged.connect(self._on_index_changed)
         layout.addWidget(self._combo)

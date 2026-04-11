@@ -15,8 +15,10 @@ import html
 from PySide6.QtCore import Qt, Slot
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
-_INTERIM_COLOR = "#888888"
-_FINAL_COLOR = "#ffffff"
+from clicky.design_system import DS
+
+_INTERIM_COLOR = DS.Colors.interim_text
+_FINAL_COLOR = DS.Colors.final_text
 _EMPTY_PLACEHOLDER = "&nbsp;"
 
 
