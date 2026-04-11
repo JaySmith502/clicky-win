@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
 
 from clicky.state import VoiceState
 from clicky.ui.response_view import ResponseView
+from clicky.ui.status_banner import StatusBanner
 from clicky.ui.transcript_view import TranscriptView
 from clicky.ui.waveform_view import WaveformView
 
@@ -71,6 +72,10 @@ class Panel(QWidget):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
+
+        # Public: app.py wires CompanionManager error/success signals here.
+        self.banner = StatusBanner(self)
+        layout.addWidget(self.banner)
 
         self._waveform = WaveformView(self)
         self._waveform.hide()
