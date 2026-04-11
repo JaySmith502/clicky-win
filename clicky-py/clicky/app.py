@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import signal
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -218,6 +219,7 @@ def run() -> int:
     # otherwise Python may hang on interpreter shutdown waiting for it
     # (pynput's helper thread is not always daemonic on Windows).
     result.app.aboutToQuit.connect(hotkey_monitor.stop)
+    result.app.aboutToQuit.connect(companion.hide)
 
     if result.was_first_run:
         # Delay the first-run auto-show so the tray icon has time to be
@@ -229,6 +231,10 @@ def run() -> int:
     # asyncio.create_task / ensure_future work inside Qt signal handlers.
     loop = qasync.QEventLoop(result.app)
     asyncio.set_event_loop(loop)
+
+    # Allow Ctrl+C to quit cleanly — qasync swallows SIGINT by default.
+    signal.signal(signal.SIGINT, lambda *_: result.app.quit())
+
     with loop:
         loop.run_forever()
     return 0
