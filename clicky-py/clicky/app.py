@@ -129,6 +129,7 @@ def run() -> int:
 
     mic.audio_level.connect(panel.set_audio_level)
     mic.error.connect(lambda msg: logger.error("mic error: %s", msg))
+    mic.error.connect(lambda msg: panel.permissions.set_mic_status(False))
 
     def _toggle_panel() -> None:
         if panel.isVisible():
