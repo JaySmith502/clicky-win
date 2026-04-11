@@ -22,6 +22,7 @@ from PySide6.QtCore import QByteArray, QObject, Signal
 
 from clicky.clients.llm_client import LLMClient
 from clicky.clients.transcription_client import TranscriptionClient
+from clicky.clients.tts_client import TTSClient
 from clicky.config import Config
 from clicky.conversation_history import ConversationHistory
 from clicky.hotkey import HotkeyMonitor
@@ -70,6 +71,7 @@ class CompanionManager(QObject):
         hotkey: HotkeyMonitor,
         transcription: TranscriptionClient,
         llm: LLMClient,
+        tts: TTSClient,
         screen_capture_fn: Callable[[], list[ScreenshotImage]],
         panel_visibility_controller: PanelVisibilityController,
         parent: QObject | None = None,
@@ -81,6 +83,7 @@ class CompanionManager(QObject):
         self._hotkey = hotkey
         self._transcription = transcription
         self._llm = llm
+        self._tts = tts
         self._screen_capture_fn = screen_capture_fn
         self._panel_visibility_controller = panel_visibility_controller
 
@@ -90,6 +93,7 @@ class CompanionManager(QObject):
         self._history = ConversationHistory()
         self._current_model: str = config.default_model
         self._cancel_flag: bool = False
+        self._speak_task: asyncio.Task[None] | None = None
 
         # PCM deque bridge — same pattern as app.py.  Replaced on every
         # hotkey-press cycle so a stale generator cannot leak chunks.
@@ -113,6 +117,8 @@ class CompanionManager(QObject):
 
         llm.delta.connect(self._on_llm_delta)
         llm.error.connect(self._on_error)
+
+        tts.error.connect(self._on_error)
 
     # ------------------------------------------------------------------
     # Public API
@@ -173,6 +179,11 @@ class CompanionManager(QObject):
 
     def _on_hotkey_pressed(self) -> None:
         logger.debug("hotkey pressed (state=%s)", self._state)
+
+        # Stop TTS playback immediately.
+        self._tts.stop()
+        if self._speak_task is not None and not self._speak_task.done():
+            self._speak_task.cancel()
 
         # Interrupt any in-flight turn OR lingering stream task.
         if self._state != VoiceState.IDLE:
@@ -239,6 +250,25 @@ class CompanionManager(QObject):
         logger.error("companion error: %s", msg)
         self.error.emit(msg)
         self._set_state(VoiceState.IDLE)
+
+    # ------------------------------------------------------------------
+    # TTS playback (async, fire-and-forget)
+    # ------------------------------------------------------------------
+
+    async def _speak(self, text: str) -> None:
+        """Speak text via TTS. State stays RESPONDING during playback."""
+        try:
+            await self._tts.speak(text)
+        except asyncio.CancelledError:
+            logger.debug("TTS cancelled")
+        except Exception as exc:  # noqa: BLE001
+            logger.error("TTS error: %s", exc)
+            self.error.emit(str(exc))
+        finally:
+            # Only transition to IDLE if we're still RESPONDING
+            # (a new hotkey press may have already changed state)
+            if self._state == VoiceState.RESPONDING:
+                self._set_state(VoiceState.IDLE)
 
     # ------------------------------------------------------------------
     # Turn pipeline (async)
@@ -309,6 +339,7 @@ class CompanionManager(QObject):
                 self._history.append(text, full_text)
                 self.response_complete.emit(full_text)
                 self.success_turn_completed.emit()
+                self._speak_task = asyncio.ensure_future(self._speak(full_text))
 
         except asyncio.CancelledError:
             logger.debug("turn cancelled")
