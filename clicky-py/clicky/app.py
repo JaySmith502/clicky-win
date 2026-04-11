@@ -8,6 +8,7 @@ the resulting Config for downstream components to read.
 from __future__ import annotations
 
 import asyncio
+import logging
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,6 +24,7 @@ from clicky.clients.tts_client import TTSClient
 from clicky.companion_manager import CompanionManager
 from clicky.config import Config, ConfigError
 from clicky.hotkey import HotkeyMonitor
+from clicky.logging_config import configure_logging
 from clicky.mic_capture import MicCapture
 from clicky.screen_capture import capture_all
 from clicky.state import VoiceState
@@ -31,6 +33,8 @@ from clicky.ui.tray_icon import TrayIcon
 
 APP_NAME = "ClickyWin"
 APP_AUTHOR = "ClickyWin"
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -98,26 +102,23 @@ def run() -> int:
     """
     result = bootstrap()
 
+    log_level = result.config.log_level if result.config else "INFO"
+    configure_logging(result.log_dir, log_level)
+
     if result.was_first_run:
-        print(
-            f"[clicky] first run: created config at {result.config_path}",
-            file=sys.stderr,
-        )
+        logger.info("first run: created config at %s", result.config_path)
 
     if result.config_error is not None:
         # Phase 1: log to stderr and proceed. Phase 2+ will surface this
         # as a banner inside the panel.
-        print(
-            f"[clicky] config error: {result.config_error}",
-            file=sys.stderr,
-        )
+        logger.warning("config error: %s", result.config_error)
 
     tray_icon = TrayIcon(initial_state=VoiceState.IDLE)
     panel = Panel()
     mic = MicCapture()
 
     mic.audio_level.connect(panel.set_audio_level)
-    mic.error.connect(lambda msg: print(f"[clicky] mic error: {msg}", file=sys.stderr))
+    mic.error.connect(lambda msg: logger.error("mic error: %s", msg))
 
     def _toggle_panel() -> None:
         if panel.isVisible():
@@ -170,19 +171,19 @@ def run() -> int:
         manager.interim_transcript.connect(panel.transcript.set_interim)
         manager.final_transcript.connect(panel.transcript.set_final)
         manager.final_transcript.connect(
-            lambda text: print(f"[clicky] final transcript: {text}", file=sys.stderr)
+            lambda text: logger.info("final transcript: %s", text)
         )
 
         # LLM response → panel response view
         manager.response_delta.connect(panel.response.append_delta)
         manager.response_complete.connect(panel.response.set_full)
         manager.response_complete.connect(
-            lambda text: print(f"[clicky] response complete: {text[:120]}", file=sys.stderr)
+            lambda text: logger.info("response complete: %s", text[:120])
         )
 
         # Errors → stderr + banner
         manager.error.connect(
-            lambda msg: print(f"[clicky] error: {msg}", file=sys.stderr)
+            lambda msg: logger.error("error: %s", msg)
         )
         manager.error.connect(panel.banner.show_error)
         manager.success_turn_completed.connect(panel.banner.clear)
