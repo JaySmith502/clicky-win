@@ -19,6 +19,7 @@ from PySide6.QtWidgets import QApplication
 
 from clicky.clients.llm_client import LLMClient
 from clicky.clients.transcription_client import TranscriptionClient
+from clicky.clients.tts_client import TTSClient
 from clicky.companion_manager import CompanionManager
 from clicky.config import Config, ConfigError
 from clicky.hotkey import HotkeyMonitor
@@ -146,12 +147,14 @@ def run() -> int:
     if result.config is not None:
         transcription = TranscriptionClient(worker_url=result.config.worker_url)
         llm = LLMClient(worker_url=result.config.worker_url)
+        tts = TTSClient(worker_url=result.config.worker_url)
         manager = CompanionManager(
             config=result.config,
             mic=mic,
             hotkey=hotkey_monitor,
             transcription=transcription,
             llm=llm,
+            tts=tts,
             screen_capture_fn=capture_all,
             panel_visibility_controller=panel,
         )
