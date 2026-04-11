@@ -29,6 +29,7 @@ from clicky.logging_config import configure_logging
 from clicky.mic_capture import MicCapture
 from clicky.screen_capture import capture_all
 from clicky.state import VoiceState
+from clicky.ui.companion_widget import CompanionWidget
 from clicky.ui.panel import Panel
 from clicky.ui.tray_icon import TrayIcon
 
@@ -114,6 +115,7 @@ def run() -> int:
 
     tray_icon = TrayIcon(initial_state=VoiceState.IDLE)
     panel = Panel()
+    companion = CompanionWidget()
 
     if result.config_error is not None:
         panel.show_near_tray(tray_icon)
@@ -210,6 +212,7 @@ def run() -> int:
 
     hotkey_monitor.start()
     tray_icon.show()
+    companion.show()
 
     # Ensure the pynput listener thread is stopped before the app exits,
     # otherwise Python may hang on interpreter shutdown waiting for it
