@@ -10,6 +10,7 @@ See ``clicky.clients`` for the AI response lifecycle.
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Slot
+from PySide6.QtGui import QTextOption
 from PySide6.QtWidgets import QTextEdit, QVBoxLayout, QWidget
 
 
@@ -22,7 +23,7 @@ class ResponseView(QWidget):
 
         self._edit = QTextEdit(self)
         self._edit.setReadOnly(True)
-        self._edit.setWordWrapMode(Qt.TextOption.WrapAtWordBoundaryOrAnywhere)
+        self._edit.setWordWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
         self._edit.setStyleSheet("color: #ffffff; background: transparent;")
         self._edit.setFrameShape(QTextEdit.Shape.NoFrame)
         self._edit.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)

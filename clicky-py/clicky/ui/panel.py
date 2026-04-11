@@ -23,7 +23,6 @@ from PySide6.QtGui import (
     QShowEvent,
 )
 from PySide6.QtWidgets import (
-    QApplication,
     QLabel,
     QSystemTrayIcon,
     QVBoxLayout,
@@ -139,7 +138,6 @@ class Panel(QWidget):
     # ------------------------------------------------------------------
     def hide_for_capture(self) -> None:
         self.setWindowOpacity(0.0)
-        QApplication.processEvents()
 
     def restore_after_capture(self) -> None:
         self.setWindowOpacity(1.0)
