@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import ctypes
 import logging
+import math
+import sys
 
 from PySide6.QtCore import (
     Property,
@@ -13,7 +16,7 @@ from PySide6.QtCore import (
     Qt,
     QTimer,
 )
-from PySide6.QtGui import QColor, QCursor, QPainter, QPolygonF
+from PySide6.QtGui import QColor, QCursor, QPainter, QPolygonF, QRadialGradient
 from PySide6.QtWidgets import QApplication, QWidget
 
 from clicky.design_system import DS
@@ -32,7 +35,7 @@ class CompanionWidget(QWidget):
     WIDGET_H = 50
 
     # Idle triangle
-    TRIANGLE_SIZE = 14  # px height of equilateral triangle
+    TRIANGLE_SIZE = 21  # px height of equilateral triangle (50% larger than original 14)
     IDLE_OPACITY = 0.6
     IDLE_COLOR = QColor("#4a9eff")
 
@@ -54,7 +57,7 @@ class CompanionWidget(QWidget):
     CONTRACT_DURATION_MS = 300
 
     # Active triangle
-    ACTIVE_TRIANGLE_SIZE = 18
+    ACTIVE_TRIANGLE_SIZE = 27
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -64,8 +67,10 @@ class CompanionWidget(QWidget):
             | Qt.WindowType.Tool
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.setStyleSheet("background:transparent;")
         self.setFixedSize(self.WIDGET_W, self.WIDGET_H)
 
         self._prev_x = 0
@@ -262,9 +267,60 @@ class CompanionWidget(QWidget):
 
     def show(self) -> None:
         super().show()
+        if sys.platform == "win32":
+            self._force_transparent_window()
         # Initialize position immediately
         self._track_cursor(force=True)
         self._cursor_timer.start()
+
+    def _force_transparent_window(self) -> None:
+        """Remove all Windows 11 DWM borders, shadows, and background."""
+        hwnd = int(self.winId())
+        user32 = ctypes.windll.user32
+        dwmapi = ctypes.windll.dwmapi
+
+        # Force WS_EX_LAYERED + WS_EX_TRANSPARENT for per-pixel alpha
+        GWL_EXSTYLE = -20  # noqa: N806
+        WS_EX_LAYERED = 0x00080000  # noqa: N806
+        WS_EX_TRANSPARENT = 0x00000020  # noqa: N806
+        style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+        user32.SetWindowLongW(
+            hwnd, GWL_EXSTYLE, style | WS_EX_LAYERED | WS_EX_TRANSPARENT
+        )
+
+        # Disable DWM non-client rendering (removes Win11 border/shadow)
+        DWMWA_NCRENDERING_POLICY = 2  # noqa: N806
+        policy = ctypes.c_int(1)  # DWMNCRP_DISABLED
+        dwmapi.DwmSetWindowAttribute(
+            hwnd, DWMWA_NCRENDERING_POLICY,
+            ctypes.byref(policy), ctypes.sizeof(policy),
+        )
+
+        # Remove DWM shadow
+        DWMWA_ALLOW_NCPAINT = 4  # noqa: N806
+        no_paint = ctypes.c_int(0)
+        dwmapi.DwmSetWindowAttribute(
+            hwnd, DWMWA_ALLOW_NCPAINT,
+            ctypes.byref(no_paint), ctypes.sizeof(no_paint),
+        )
+
+        # Disable Win11 rounded corners
+        DWMWA_WINDOW_CORNER_PREFERENCE = 33  # noqa: N806
+        DWMWCP_DONOTROUND = ctypes.c_int(1)  # noqa: N806
+        dwmapi.DwmSetWindowAttribute(
+            hwnd, DWMWA_WINDOW_CORNER_PREFERENCE,
+            ctypes.byref(DWMWCP_DONOTROUND), ctypes.sizeof(DWMWCP_DONOTROUND),
+        )
+
+        # Extend DWM frame into entire client area (enables full alpha blending)
+        class MARGINS(ctypes.Structure):  # noqa: N801
+            _fields_ = [
+                ("left", ctypes.c_int), ("right", ctypes.c_int),
+                ("top", ctypes.c_int), ("bottom", ctypes.c_int),
+            ]
+
+        margins = MARGINS(-1, -1, -1, -1)
+        dwmapi.DwmExtendFrameIntoClientArea(hwnd, ctypes.byref(margins))
 
     def hide(self) -> None:
         self._cursor_timer.stop()
@@ -307,6 +363,10 @@ class CompanionWidget(QWidget):
     # Painting
     # ------------------------------------------------------------------
 
+    # Aura: tight subtle glow just outside the triangle
+    AURA_RADIUS_FACTOR = 1.3
+    AURA_OPACITY = 0.15
+
     def paintEvent(self, event) -> None:  # noqa: ARG002
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -321,52 +381,77 @@ class CompanionWidget(QWidget):
         else:
             base_color = DS.Colors.companion_idle
 
-        color = QColor(base_color)
-        color.setAlphaF(self._opacity)
         painter.setPen(Qt.PenStyle.NoPen)
 
-        cy = self.WIDGET_H / 2
-
-        if self._state == VoiceState.PROCESSING and not self._error_flash:
-            # Pulsing dot for processing
-            radius = 8 * self._pulse_scale
-            painter.setBrush(color)
-            painter.drawEllipse(QPointF(radius + 2, cy), radius, radius)
-        elif self._state == VoiceState.RESPONDING and not self._error_flash:
-            # Breathing diamond waveform in green
+        # Triangle sizing
+        if self._state in (VoiceState.PROCESSING, VoiceState.RESPONDING):
             tri_size = self.ACTIVE_TRIANGLE_SIZE
-            h = tri_size
-            w = h * 0.866
-            painter.setBrush(color)
-            triangle = QPolygonF(
-                [
-                    QPointF(0, cy - h / 2),
-                    QPointF(w, cy),
-                    QPointF(0, cy + h / 2),
-                ]
-            )
-            painter.drawPolygon(triangle)
-            self._paint_breathing_waveform(painter, tri_offset=w + 4, cy=cy)
         else:
-            # Triangle (idle or listening)
             size_delta = self.ACTIVE_TRIANGLE_SIZE - self.TRIANGLE_SIZE
             tri_size = self.TRIANGLE_SIZE + size_delta * self._scale
 
-            painter.setBrush(color)
-            h = tri_size
-            w = h * 0.866
-            triangle = QPolygonF(
-                [
-                    QPointF(0, cy - h / 2),
-                    QPointF(w, cy),
-                    QPointF(0, cy + h / 2),
-                ]
-            )
-            painter.drawPolygon(triangle)
+        # Triangle points at cursor (upper-left) at 45° angle.
+        # Tip is at upper-left corner of widget, base fans out toward lower-right.
+        h = tri_size
+        w = h * 0.866
+        # Triangle center for aura positioning
+        tri_cx = w * 0.4
+        tri_cy = h * 0.4
 
-            # Waveform bars when listening
-            if self._scale > 0.01 and self._state == VoiceState.LISTENING:
-                self._paint_waveform(painter, tri_offset=w + 4, cy=cy)
+        # Draw aura (subtle radial glow behind triangle)
+        aura_r = tri_size * self.AURA_RADIUS_FACTOR
+        aura_color = QColor(base_color)
+        aura_color.setAlphaF(self.AURA_OPACITY * self._opacity)
+        gradient = QRadialGradient(QPointF(tri_cx, tri_cy), aura_r)
+        gradient.setColorAt(0.0, aura_color)
+        transparent = QColor(base_color)
+        transparent.setAlphaF(0.0)
+        gradient.setColorAt(1.0, transparent)
+        painter.setBrush(gradient)
+        painter.drawEllipse(QPointF(tri_cx, tri_cy), aura_r, aura_r)
+
+        # Draw 45°-rotated triangle pointing toward cursor (upper-left)
+        # Tip at top-left, two base vertices fan out
+        color = QColor(base_color)
+        color.setAlphaF(self._opacity)
+        painter.setBrush(color)
+
+        angle = math.radians(225)  # point upper-left (toward cursor)
+        tip_x = tri_cx + w * 0.5 * math.cos(angle)
+        tip_y = tri_cy + w * 0.5 * math.sin(angle)
+        base_angle_1 = angle + math.radians(140)
+        base_angle_2 = angle - math.radians(140)
+        base1_x = tri_cx + h * 0.4 * math.cos(base_angle_1)
+        base1_y = tri_cy + h * 0.4 * math.sin(base_angle_1)
+        base2_x = tri_cx + h * 0.4 * math.cos(base_angle_2)
+        base2_y = tri_cy + h * 0.4 * math.sin(base_angle_2)
+
+        triangle = QPolygonF(
+            [
+                QPointF(tip_x, tip_y),
+                QPointF(base1_x, base1_y),
+                QPointF(base2_x, base2_y),
+            ]
+        )
+        painter.drawPolygon(triangle)
+
+        # Waveform bars (offset from triangle center, extending right)
+        waveform_x = tri_cx + w * 0.6
+        waveform_cy = tri_cy + h * 0.3
+
+        if self._state == VoiceState.PROCESSING and not self._error_flash:
+            # Pulsing dot
+            radius = 6 * self._pulse_scale
+            dot_color = QColor(base_color)
+            dot_color.setAlphaF(self._opacity)
+            painter.setBrush(dot_color)
+            painter.drawEllipse(QPointF(waveform_x + 8, waveform_cy), radius, radius)
+        elif self._state == VoiceState.RESPONDING and not self._error_flash:
+            self._paint_breathing_waveform(
+                painter, tri_offset=waveform_x, cy=waveform_cy
+            )
+        elif self._scale > 0.01 and self._state == VoiceState.LISTENING:
+            self._paint_waveform(painter, tri_offset=waveform_x, cy=waveform_cy)
 
         painter.end()
 
