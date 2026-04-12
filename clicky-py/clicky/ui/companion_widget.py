@@ -10,7 +10,6 @@ import sys
 from PySide6.QtCore import (
     Property,
     QEasingCurve,
-    QPoint,
     QPointF,
     QPropertyAnimation,
     QRectF,
@@ -94,9 +93,17 @@ class CompanionWidget(QWidget):
         self._pulse_color: str | None = None
         self._pulse_anim = QPropertyAnimation(self, b"anim_pulse")
 
-        # Position animation for fly-to / return-to-cursor
-        self._pos_anim = QPropertyAnimation(self, b"pos")
+        # Fly-to / return-to-cursor animation (manual lerp — QPropertyAnimation
+        # on pos doesn't interpolate smoothly for top-level windows on Windows)
         self._fly_target: tuple[int, int] | None = None
+        self._fly_start: tuple[float, float] = (0.0, 0.0)
+        self._fly_end: tuple[float, float] = (0.0, 0.0)
+        self._fly_progress: float = 0.0  # 0.0 → 1.0
+        self._fly_duration_ms: int = 400
+        self._fly_returning: bool = False
+        self._fly_timer = QTimer(self)
+        self._fly_timer.setInterval(self.TRACK_INTERVAL_MS)  # ~30fps
+        self._fly_timer.timeout.connect(self._fly_step)
 
         # Error flash timer
         self._error_timer = QTimer(self)
@@ -151,8 +158,9 @@ class CompanionWidget(QWidget):
 
         if state == VoiceState.LISTENING:
             # Interrupt: stop any fly animation, clear target, resume tracking
-            self._pos_anim.stop()
+            self._fly_timer.stop()
             self._fly_target = None
+            self._fly_returning = False
             self._frozen = False
             self._stop_pulse()
             self._animate_expand()
@@ -349,25 +357,27 @@ class CompanionWidget(QWidget):
         self.setVisible(True)
 
     def fly_to(self, x: int, y: int) -> None:
-        """Animate companion to target screen coordinates."""
+        """Smoothly animate companion to target screen coordinates."""
         self._fly_target = (x, y)
+        self._fly_returning = False
         # Offset so triangle tip points near the target
         target_x = x - int(self.WIDGET_W * 0.15)
         target_y = y - int(self.WIDGET_H * 0.15)
 
-        self._pos_anim.stop()
-        self._pos_anim.setStartValue(self.pos())
-        self._pos_anim.setEndValue(QPoint(target_x, target_y))
-        self._pos_anim.setDuration(400)
-        self._pos_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
-        self._pos_anim.start()
+        pos = self.pos()
+        self._fly_start = (float(pos.x()), float(pos.y()))
+        self._fly_end = (float(target_x), float(target_y))
+        self._fly_progress = 0.0
+        self._fly_duration_ms = 400
+        self._fly_timer.start()
         logger.info("fly_to: (%d, %d)", x, y)
 
     def return_to_cursor(self) -> None:
-        """Animate back to current cursor position, then resume tracking."""
+        """Smoothly animate back to cursor position, then resume tracking."""
         if self._fly_target is None:
             return
         self._fly_target = None
+        self._fly_returning = True
 
         cursor_pos = QCursor.pos()
         screen = QApplication.screenAt(cursor_pos)
@@ -382,22 +392,36 @@ class CompanionWidget(QWidget):
             offset=self.OFFSET, edge_margin=self.EDGE_MARGIN,
         )
 
-        self._pos_anim.stop()
-        self._pos_anim.setStartValue(self.pos())
-        self._pos_anim.setEndValue(QPoint(placement.x, placement.y))
-        self._pos_anim.setDuration(300)
-        self._pos_anim.setEasingCurve(QEasingCurve.Type.InCubic)
-        self._pos_anim.finished.connect(
-            self._on_return_complete, Qt.ConnectionType.SingleShotConnection
-        )
-        self._pos_anim.start()
+        pos = self.pos()
+        self._fly_start = (float(pos.x()), float(pos.y()))
+        self._fly_end = (float(placement.x), float(placement.y))
+        self._fly_progress = 0.0
+        self._fly_duration_ms = 300
+        self._fly_timer.start()
 
-    def _on_return_complete(self) -> None:
-        """Resume cursor tracking after return animation."""
-        self._frozen = False
-        self._prev_x = 0
-        self._prev_y = 0
-        self._track_cursor(force=True)
+    def _fly_step(self) -> None:
+        """Advance one frame of fly animation (called by _fly_timer)."""
+        step = self.TRACK_INTERVAL_MS / self._fly_duration_ms
+        self._fly_progress = min(1.0, self._fly_progress + step)
+
+        # OutCubic easing: 1 - (1 - t)^3
+        t = self._fly_progress
+        eased = 1.0 - (1.0 - t) ** 3
+
+        sx, sy = self._fly_start
+        ex, ey = self._fly_end
+        cur_x = sx + (ex - sx) * eased
+        cur_y = sy + (ey - sy) * eased
+        self.move(int(cur_x), int(cur_y))
+
+        if self._fly_progress >= 1.0:
+            self._fly_timer.stop()
+            if self._fly_returning:
+                self._fly_returning = False
+                self._frozen = False
+                self._prev_x = 0
+                self._prev_y = 0
+                self._track_cursor(force=True)
 
     # ------------------------------------------------------------------
     # Cursor tracking
