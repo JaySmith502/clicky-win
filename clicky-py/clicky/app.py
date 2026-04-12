@@ -32,7 +32,6 @@ from clicky.screen_capture import capture_all
 from clicky.state import VoiceState
 from clicky.ui.companion_widget import CompanionWidget
 from clicky.ui.history_window import HistoryWindow
-from clicky.ui.panel import Panel
 from clicky.ui.tray_icon import TrayIcon
 
 APP_NAME = "ClickyWin"
@@ -116,26 +115,13 @@ def run() -> int:
         logger.warning("config error: %s", result.config_error)
 
     tray_icon = TrayIcon()
-    panel = Panel()
     companion = CompanionWidget()
     history = HistoryWindow()
-
-    if result.config_error is not None:
-        panel.show_near_tray(tray_icon)
-        panel.banner.show_warning(
-            f"Invalid config: {result.config_error}",
-            action_label="Open config",
-            on_action=lambda: os.startfile(result.config_path),
-        )
-    elif result.was_first_run and result.config is not None:
-        panel.banner.show_info(f"Press Ctrl+Alt to talk. Config at {result.config_path}")
 
     mic = MicCapture()
     output_capture = OutputCapture()
 
-    mic.audio_level.connect(panel.set_audio_level)
     mic.error.connect(lambda msg: logger.error("mic error: %s", msg))
-    mic.error.connect(lambda msg: panel.permissions.set_mic_status(False))
 
     # Output loopback → companion waveform during RESPONDING
     output_capture.audio_level.connect(companion.set_output_level)
@@ -168,11 +154,10 @@ def run() -> int:
             llm=llm,
             tts=tts,
             screen_capture_fn=capture_all,
-            panel_visibility_controller=panel,
+            panel_visibility_controller=companion,
         )
 
-        # State → panel + companion
-        manager.state_changed.connect(panel.set_state)
+        # State → companion
         manager.state_changed.connect(companion.set_state)
 
         # Start/stop output loopback capture based on state
@@ -184,31 +169,24 @@ def run() -> int:
 
         manager.state_changed.connect(_manage_output_capture)
 
-        # Audio level → panel waveform
-        manager.audio_level.connect(panel.set_audio_level)
+        # Audio level → companion waveform
         manager.audio_level.connect(companion.set_audio_level)
 
-        # Transcription → panel transcript
-        manager.interim_transcript.connect(panel.transcript.set_interim)
-        manager.final_transcript.connect(panel.transcript.set_final)
+        # Transcription → log
         manager.final_transcript.connect(
             lambda text: logger.info("final transcript: %s", text)
         )
 
-        # LLM response → panel response view
-        manager.response_delta.connect(panel.response.append_delta)
-        manager.response_complete.connect(panel.response.set_full)
+        # LLM response → log
         manager.response_complete.connect(
             lambda text: logger.info("response complete: %s", text[:120])
         )
 
-        # Errors → stderr + banner
+        # Errors → log + companion
         manager.error.connect(
             lambda msg: logger.error("error: %s", msg)
         )
-        manager.error.connect(panel.banner.show_error)
         manager.error.connect(companion.flash_error)
-        manager.success_turn_completed.connect(panel.banner.clear)
 
         # Transcription → history window
         manager.interim_transcript.connect(history.append_interim)

@@ -34,15 +34,15 @@ from clicky.state import VoiceState
 logger = logging.getLogger(__name__)
 
 
-class PanelVisibilityController(Protocol):
-    """Protocol for hiding/restoring the panel during screen capture."""
+class CaptureVisibilityController(Protocol):
+    """Protocol for hiding/restoring UI during screen capture."""
 
     def hide_for_capture(self) -> None:
-        """Set window opacity to 0.0 and pump events so compositor removes it."""
+        """Temporarily hide during screen capture."""
         ...
 
     def restore_after_capture(self) -> None:
-        """Set window opacity back to 1.0."""
+        """Restore after screen capture."""
         ...
 
 
@@ -73,7 +73,7 @@ class CompanionManager(QObject):
         llm: LLMClient,
         tts: TTSClient,
         screen_capture_fn: Callable[[], list[ScreenshotImage]],
-        panel_visibility_controller: PanelVisibilityController,
+        panel_visibility_controller: CaptureVisibilityController,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
