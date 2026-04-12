@@ -10,6 +10,7 @@ import sys
 from PySide6.QtCore import (
     Property,
     QEasingCurve,
+    QPoint,
     QPointF,
     QPropertyAnimation,
     QRectF,
@@ -93,6 +94,10 @@ class CompanionWidget(QWidget):
         self._pulse_color: str | None = None
         self._pulse_anim = QPropertyAnimation(self, b"anim_pulse")
 
+        # Position animation for fly-to / return-to-cursor
+        self._pos_anim = QPropertyAnimation(self, b"pos")
+        self._fly_target: tuple[int, int] | None = None
+
         # Error flash timer
         self._error_timer = QTimer(self)
         self._error_timer.setSingleShot(True)
@@ -145,6 +150,9 @@ class CompanionWidget(QWidget):
         self._state = state
 
         if state == VoiceState.LISTENING:
+            # Interrupt: stop any fly animation, clear target, resume tracking
+            self._pos_anim.stop()
+            self._fly_target = None
             self._frozen = False
             self._stop_pulse()
             self._animate_expand()
@@ -154,9 +162,12 @@ class CompanionWidget(QWidget):
             self._frozen = True  # freeze position during TTS
             self._start_pulse(DS.Colors.companion_responding)
         elif state == VoiceState.IDLE:
-            self._frozen = False
             self._stop_pulse()
             self._animate_contract()
+            if self._fly_target is not None:
+                self.return_to_cursor()
+            else:
+                self._frozen = False
 
         self.update()
 
@@ -338,8 +349,55 @@ class CompanionWidget(QWidget):
         self.setVisible(True)
 
     def fly_to(self, x: int, y: int) -> None:
-        """Animate to target position. Stub — real animation in Slice 3."""
+        """Animate companion to target screen coordinates."""
+        self._fly_target = (x, y)
+        # Offset so triangle tip points near the target
+        target_x = x - int(self.WIDGET_W * 0.15)
+        target_y = y - int(self.WIDGET_H * 0.15)
+
+        self._pos_anim.stop()
+        self._pos_anim.setStartValue(self.pos())
+        self._pos_anim.setEndValue(QPoint(target_x, target_y))
+        self._pos_anim.setDuration(400)
+        self._pos_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._pos_anim.start()
         logger.info("fly_to: (%d, %d)", x, y)
+
+    def return_to_cursor(self) -> None:
+        """Animate back to current cursor position, then resume tracking."""
+        if self._fly_target is None:
+            return
+        self._fly_target = None
+
+        cursor_pos = QCursor.pos()
+        screen = QApplication.screenAt(cursor_pos)
+        if screen is None:
+            self._frozen = False
+            return
+        geo = screen.geometry()
+        screen_rect = (geo.x(), geo.y(), geo.width(), geo.height())
+        placement = compute_position(
+            cursor_pos.x(), cursor_pos.y(), screen_rect,
+            companion_size=(self.WIDGET_W, self.WIDGET_H),
+            offset=self.OFFSET, edge_margin=self.EDGE_MARGIN,
+        )
+
+        self._pos_anim.stop()
+        self._pos_anim.setStartValue(self.pos())
+        self._pos_anim.setEndValue(QPoint(placement.x, placement.y))
+        self._pos_anim.setDuration(300)
+        self._pos_anim.setEasingCurve(QEasingCurve.Type.InCubic)
+        self._pos_anim.finished.connect(
+            self._on_return_complete, Qt.ConnectionType.SingleShotConnection
+        )
+        self._pos_anim.start()
+
+    def _on_return_complete(self) -> None:
+        """Resume cursor tracking after return animation."""
+        self._frozen = False
+        self._prev_x = 0
+        self._prev_y = 0
+        self._track_cursor(force=True)
 
     # ------------------------------------------------------------------
     # Cursor tracking
