@@ -47,6 +47,7 @@ class CompanionWidget(QWidget):
     WAVEFORM_MAX_HEIGHT = 24  # max bar height
     WAVEFORM_MIN_HEIGHT = 2   # min bar height (silent)
     WAVEFORM_GAP = 2          # gap between bars
+    WAVEFORM_GAIN = 12.0      # amplify RMS (speech is ~0.01-0.05)
 
     # Animation durations
     EXPAND_DURATION_MS = 150
@@ -251,8 +252,9 @@ class CompanionWidget(QWidget):
 
     def _paint_waveform(self, painter: QPainter, tri_offset: float, cy: float) -> None:
         """Paint 8-bar diamond waveform to the right of the triangle."""
+        boosted = min(1.0, self._audio_level * self.WAVEFORM_GAIN)
         bar_heights = compute_bar_heights(
-            self._audio_level, self.WAVEFORM_MAX_HEIGHT, self.WAVEFORM_MIN_HEIGHT
+            boosted, self.WAVEFORM_MAX_HEIGHT, self.WAVEFORM_MIN_HEIGHT
         )
 
         total_bar_width = self.WAVEFORM_WIDTH - (self.WAVEFORM_GAP * (self.WAVEFORM_BAR_COUNT - 1))
