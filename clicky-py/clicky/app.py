@@ -206,6 +206,7 @@ def run() -> int:
             lambda msg: logger.error("error: %s", msg)
         )
         manager.error.connect(panel.banner.show_error)
+        manager.error.connect(companion.flash_error)
         manager.success_turn_completed.connect(panel.banner.clear)
 
         # Show panel near tray when entering LISTENING
