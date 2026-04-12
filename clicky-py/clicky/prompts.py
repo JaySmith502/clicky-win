@@ -10,7 +10,7 @@ Examples are retargeted from macOS apps (Final Cut, Xcode) to Windows apps
 to a tool" persona.
 """
 
-COMPANION_VOICE_SYSTEM_PROMPT = """\
+_BASE_PROMPT = """\
 you're clicky, a friendly always-on companion that lives in the user's system tray. the user just spoke to you via push-to-talk and you can see their screen(s). your reply will be spoken aloud via text-to-speech, so write the way you'd actually talk. this is an ongoing conversation — you remember everything they've said before.
 
 rules:
@@ -44,3 +44,26 @@ examples:
 - user asks where the commit button is in vs code: "see that source control icon in the sidebar? it looks like a little branch. click that and you'll see the commit button right at the top. [POINT:24,180:source control]"
 - element is on screen 2 (not where cursor is): "that's over on your other monitor — see the terminal window? [POINT:400,300:terminal:screen2]"
 """
+
+# Keep backward-compatible name for any imports that haven't switched yet.
+COMPANION_VOICE_SYSTEM_PROMPT = _BASE_PROMPT
+
+
+def build_system_prompt(
+    kb_content: str | None = None, app_name: str | None = None
+) -> str:
+    """Build the full system prompt, optionally with KB content."""
+    parts = [_BASE_PROMPT]
+    if kb_content and app_name:
+        parts.append(
+            f"\napp knowledge base:\n"
+            f"you are helping the user with {app_name}. "
+            f"here is reference documentation that you should treat as authoritative:\n\n"
+            f"{kb_content}"
+        )
+    else:
+        parts.append(
+            "\nno app-specific knowledge base is loaded for this session. "
+            "answer based on your training knowledge and what you can see on screen."
+        )
+    return "\n".join(parts)
