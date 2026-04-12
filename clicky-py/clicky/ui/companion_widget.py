@@ -321,11 +321,26 @@ class CompanionWidget(QWidget):
 
         cy = self.WIDGET_H / 2
 
-        if self._state in (VoiceState.PROCESSING, VoiceState.RESPONDING) and not self._error_flash:
-            # Pulsing dot
+        if self._state == VoiceState.PROCESSING and not self._error_flash:
+            # Pulsing dot for processing
             radius = 8 * self._pulse_scale
             painter.setBrush(color)
             painter.drawEllipse(QPointF(radius + 2, cy), radius, radius)
+        elif self._state == VoiceState.RESPONDING and not self._error_flash:
+            # Breathing diamond waveform in green
+            tri_size = self.ACTIVE_TRIANGLE_SIZE
+            h = tri_size
+            w = h * 0.866
+            painter.setBrush(color)
+            triangle = QPolygonF(
+                [
+                    QPointF(0, cy - h / 2),
+                    QPointF(w, cy),
+                    QPointF(0, cy + h / 2),
+                ]
+            )
+            painter.drawPolygon(triangle)
+            self._paint_breathing_waveform(painter, tri_offset=w + 4, cy=cy)
         else:
             # Triangle (idle or listening)
             size_delta = self.ACTIVE_TRIANGLE_SIZE - self.TRIANGLE_SIZE
@@ -371,5 +386,30 @@ class CompanionWidget(QWidget):
             y = cy - h / 2
             painter.drawRoundedRect(
                 QRectF(x, y, bar_w, h), 2, 2
+            )
+            x += bar_w + self.WAVEFORM_GAP
+
+    def _paint_breathing_waveform(self, painter: QPainter, tri_offset: float, cy: float) -> None:
+        """Paint breathing diamond waveform for RESPONDING state (pulse-driven, not mic)."""
+        # Use pulse_scale (0.8–1.2) as a synthetic "level" for gentle breathing
+        synthetic_level = (self._pulse_scale - 0.8) / 0.4  # normalize to 0.0–1.0
+        synthetic_level = max(0.3, min(1.0, synthetic_level))  # floor at 0.3 so bars stay visible
+
+        bar_heights = compute_bar_heights(
+            synthetic_level, self.WAVEFORM_MAX_HEIGHT, self.WAVEFORM_MIN_HEIGHT
+        )
+
+        total_bar_width = self.WAVEFORM_WIDTH - (self.WAVEFORM_GAP * (self.WAVEFORM_BAR_COUNT - 1))
+        bar_w = total_bar_width / self.WAVEFORM_BAR_COUNT
+
+        color = QColor(DS.Colors.companion_responding)
+        color.setAlphaF(self._opacity)
+        painter.setBrush(color)
+
+        x = tri_offset
+        for bar_h in bar_heights:
+            y = cy - bar_h / 2
+            painter.drawRoundedRect(
+                QRectF(x, y, bar_w, bar_h), 2, 2
             )
             x += bar_w + self.WAVEFORM_GAP

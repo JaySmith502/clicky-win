@@ -209,10 +209,11 @@ def run() -> int:
         manager.error.connect(companion.flash_error)
         manager.success_turn_completed.connect(panel.banner.clear)
 
-        # Show panel near tray when entering LISTENING
-        manager.state_changed.connect(
-            lambda state: panel.show_near_tray(tray_icon) if state == VoiceState.LISTENING else None
-        )
+        # v1 panel auto-show disabled — companion widget handles state now.
+        # Panel still exists for migration but doesn't auto-appear.
+        # manager.state_changed.connect(
+        #     lambda state: panel.show_near_tray(tray_icon) if state == VoiceState.LISTENING else None
+        # )
 
     hotkey_monitor.start()
     tray_icon.show()
