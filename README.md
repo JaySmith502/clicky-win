@@ -1,164 +1,179 @@
-# Clicky — an AI buddy that lives next to your cursor
+# ClickyWin
 
-> **Looking for the Windows version?** See [ClickyWin](clicky-py/README.md) — a Python + PySide6 port with cursor guidance, knowledge base injection, and real-time output waveform.
+**A voice-powered AI tutor for Windows that watches your screen, answers your questions, and points at what it's talking about.**
 
-It's an AI teacher that lives as a buddy next to your cursor. It can see your screen, talk to you, and even point at stuff. Kinda like having a real teacher next to you.
+ClickyWin is a Windows port of [Farza's Clicky](https://github.com/farzaa/clicky) — the open-source AI companion that lives next to your cursor. Hold Ctrl+Alt to talk, release to get a spoken answer from Claude. The companion cursor flies to UI elements it references, so you always know exactly what it's describing.
 
-Download it [here](https://www.clicky.so/) for free.
+Built for Windows developers, creatives, and anyone learning unfamiliar software by doing instead of watching tutorials.
 
-Here's the [original tweet](https://x.com/FarzaTV/status/2041314633978659092) that kinda blew up for a demo for more context.
+## How it works
 
-![Clicky — an ai buddy that lives on your mac](clicky-demo.gif)
+1. Launch ClickyWin. A small blue triangle appears near your cursor.
+2. Open whatever software you're learning — DaVinci Resolve, Blender, Wild Apricot, anything.
+3. Hold **Ctrl+Alt** and ask your question out loud.
+4. Release. ClickyWin screenshots your screen(s), sends them to Claude along with your transcribed speech, and speaks the answer back to you.
+5. The companion cursor flies to the UI element Claude is describing, so your eyes go right to it.
+6. Follow up with another question — ClickyWin remembers the conversation.
 
-This is the open-source version of Clicky for those that want to hack on it, build their own features, or just see how it works under the hood.
+## Features
 
-## Get started with Claude Code
+- **Push-to-talk voice input** via Ctrl+Alt with live waveform visualization
+- **Multi-monitor screen capture** sent to Claude for visual context
+- **Text-to-speech responses** via ElevenLabs with real-time output waveform
+- **Cursor guidance** — companion flies to UI elements Claude references
+- **Knowledge base injection** — curated markdown docs loaded per-app based on active window, so Claude gives authoritative answers for niche software
+- **Conversation memory** — 20-turn history so follow-up questions have full context
+- **Interrupt support** — press Ctrl+Alt mid-response to cut the audio and ask something new
+- **History window** — optional scrollable transcript accessible from the tray menu
 
-The fastest way to get this running is with [Claude Code](https://docs.anthropic.com/en/docs/claude-code).
+## Prerequisites
 
-Once you get Claude running, paste this:
+- **Windows 10/11**
+- **Python 3.12** — [download](https://www.python.org/downloads/)
+- **uv** package manager — [install](https://docs.astral.sh/uv/getting-started/installation/)
+- **Node.js 18+** — for deploying the Cloudflare Worker
+- **Cloudflare account** (free tier) — [sign up](https://dash.cloudflare.com/sign-up)
+- **API keys:**
+  - [Anthropic](https://console.anthropic.com) (Claude)
+  - [AssemblyAI](https://www.assemblyai.com) (speech-to-text)
+  - [ElevenLabs](https://elevenlabs.io) (text-to-speech)
 
-```
-Hi Claude.
+## Quick start
 
-Clone https://github.com/farzaa/clicky.git into my current directory.
-
-Then read the CLAUDE.md. I want to get Clicky running locally on my Mac.
-
-Help me set up everything — the Cloudflare Worker with my own API keys, the proxy URLs, and getting it building in Xcode. Walk me through it.
-```
-
-That's it. It'll clone the repo, read the docs, and walk you through the whole setup. Once you're running you can just keep talking to it — build features, fix bugs, whatever. Go crazy.
-
-## Manual setup (macOS)
-
-If you want to do it yourself, here's the deal.
-
-### Prerequisites
-
-- macOS 14.2+ (for ScreenCaptureKit)
-- Xcode 15+
-- Node.js 18+ (for the Cloudflare Worker)
-- A [Cloudflare](https://cloudflare.com) account (free tier works)
-- API keys for: [Anthropic](https://console.anthropic.com), [AssemblyAI](https://www.assemblyai.com), [ElevenLabs](https://elevenlabs.io)
-
-### 1. Set up the Cloudflare Worker
-
-The Worker is a tiny proxy that holds your API keys. The app talks to the Worker, the Worker talks to the APIs. This way your keys never ship in the app binary.
+### 1. Clone and install
 
 ```bash
-cd worker
+git clone https://github.com/JaySmith502/clicky-win.git
+cd clicky-win/clicky-py
+uv sync
+```
+
+### 2. Deploy the Cloudflare Worker
+
+The Worker is a tiny proxy that holds your API keys. The app talks to the Worker, the Worker talks to the APIs. Your keys never ship in the app.
+
+```bash
+cd ../worker
 npm install
-```
-
-Now add your secrets. Wrangler will prompt you to paste each one:
-
-```bash
 npx wrangler secret put ANTHROPIC_API_KEY
 npx wrangler secret put ASSEMBLYAI_API_KEY
 npx wrangler secret put ELEVENLABS_API_KEY
-```
-
-For the ElevenLabs voice ID, open `wrangler.toml` and set it there (it's not sensitive):
-
-```toml
-[vars]
-ELEVENLABS_VOICE_ID = "your-voice-id-here"
-```
-
-Deploy it:
-
-```bash
 npx wrangler deploy
 ```
 
-It'll give you a URL like `https://your-worker-name.your-subdomain.workers.dev`. Copy that.
+Copy the deployed URL (e.g. `https://your-worker.your-subdomain.workers.dev`).
 
-### 2. Run the Worker locally (for development)
-
-If you want to test changes to the Worker without deploying:
+### 3. Configure and run
 
 ```bash
-cd worker
-npx wrangler dev
+cd ../clicky-py
+uv run python -m clicky
 ```
 
-This starts a local server (usually `http://localhost:8787`) that behaves exactly like the deployed Worker. You'll need to create a `.dev.vars` file in the `worker/` directory with your keys:
+On first run, ClickyWin creates `%APPDATA%\ClickyWin\config.toml`. Open it and paste your Worker URL:
 
-```
-ANTHROPIC_API_KEY=sk-ant-...
-ASSEMBLYAI_API_KEY=...
-ELEVENLABS_API_KEY=...
-ELEVENLABS_VOICE_ID=...
+```toml
+worker_url = "https://your-worker.your-subdomain.workers.dev"
 ```
 
-Then update the proxy URLs in the Swift code to point to `http://localhost:8787` instead of the deployed Worker URL while developing. Grep for `clicky-proxy` to find them all.
+Restart ClickyWin. The blue triangle should appear near your cursor. Hold Ctrl+Alt and start talking.
 
-### 3. Update the proxy URLs in the app
+### 4. Permissions
 
-The app has the Worker URL hardcoded in a few places. Search for `your-worker-name.your-subdomain.workers.dev` and replace it with your Worker URL:
+- **Microphone:** Windows Settings > Privacy > Microphone — ensure access is enabled
+- **SmartScreen:** If Windows shows a warning on first run, click "More info" then "Run anyway"
+
+## Build a standalone exe
 
 ```bash
-grep -r "clicky-proxy" leanring-buddy/
+cd clicky-py
+uv run pyinstaller clicky.spec
 ```
 
-You'll find it in:
-- `CompanionManager.swift` — Claude chat + ElevenLabs TTS
-- `AssemblyAIStreamingTranscriptionProvider.swift` — AssemblyAI token endpoint
+Output: `dist/clicky/ClickyWin.exe` — runs without Python installed.
 
-### 4. Open in Xcode and run
+## Configuration
 
-```bash
-open leanring-buddy.xcodeproj
+Edit `%APPDATA%\ClickyWin\config.toml`:
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `worker_url` | *(required)* | Your deployed Cloudflare Worker URL |
+| `hotkey` | `ctrl+alt` | Push-to-talk binding. Also supports `right_ctrl` |
+| `default_model` | `claude-sonnet-4-6` | Claude model for responses |
+| `log_level` | `INFO` | DEBUG, INFO, WARNING, or ERROR |
+| `knowledge_dir` | `%APPDATA%/ClickyWin/knowledge/` | Path to knowledge base folder |
+
+## Knowledge base
+
+ClickyWin can inject curated documentation into Claude's context based on which app is in the foreground. This turns it from a general-purpose assistant into an expert trainer for specific software.
+
+### Setting up a KB
+
+Create a folder per app inside your knowledge directory:
+
+```
+%APPDATA%/ClickyWin/knowledge/
+  └── wild_apricot/
+      ├── _meta.toml      # maps window titles to this KB
+      ├── overview.md      # always included — app overview
+      ├── events.md        # topic-specific docs
+      ├── membership.md
+      └── email.md
 ```
 
-In Xcode:
-1. Select the `leanring-buddy` scheme (yes, the typo is intentional, long story)
-2. Set your signing team under Signing & Capabilities
-3. Hit **Cmd + R** to build and run
+The `_meta.toml` file tells ClickyWin when to load this KB:
 
-The app will appear in your menu bar (not the dock). Click the icon to open the panel, grant the permissions it asks for, and you're good.
+```toml
+name = "Wild Apricot"
+window_titles = ["Wild Apricot", "wildapricot.org"]
+```
 
-### Permissions the app needs
+When the foreground window title contains any of the `window_titles` strings, all markdown files in that folder are injected into Claude's system prompt as authoritative reference documentation.
 
-- **Microphone** — for push-to-talk voice capture
-- **Accessibility** — for the global keyboard shortcut (Control + Option)
-- **Screen Recording** — for taking screenshots when you use the hotkey
-- **Screen Content** — for ScreenCaptureKit access
+### Authoring KB content
 
-## Windows setup
+Any source of markdown works. We recommend [NotebookLM](https://notebooklm.google.com/) for distilling large doc sets:
 
-See [clicky-py/README.md](clicky-py/README.md) for full Windows installation instructions, build guide, and knowledge base setup.
+1. Upload the software's documentation, help articles, or video transcripts to NotebookLM
+2. Ask it to produce focused markdown per topic area
+3. Drop the `.md` files into the app's KB folder
+4. Write a `_meta.toml` with window title matchers
+
+No restart required — ClickyWin loads KB content fresh on every turn.
 
 ## Architecture
 
-If you want the full technical breakdown, read `CLAUDE.md`. But here's the short version:
-
-**Menu bar app** (no dock icon) with two `NSPanel` windows — one for the control panel dropdown, one for the full-screen transparent cursor overlay. Push-to-talk streams audio over a websocket to AssemblyAI, sends the transcript + screenshot to Claude via streaming SSE, and plays the response through ElevenLabs TTS. Claude can embed `[POINT:x,y:label:screenN]` tags in its responses to make the cursor fly to specific UI elements across multiple monitors. All three APIs are proxied through a Cloudflare Worker.
-
-## Project structure
+Python + PySide6 system tray app using asyncio (via qasync). All three APIs are proxied through a shared Cloudflare Worker.
 
 ```
-leanring-buddy/          # Swift source — original macOS Clicky
-  CompanionManager.swift    # Central state machine
-  CompanionPanelView.swift  # Menu bar panel UI
-  ClaudeAPI.swift           # Claude streaming client
-  ElevenLabsTTSClient.swift # Text-to-speech playback
-  OverlayWindow.swift       # Blue cursor overlay
-  AssemblyAI*.swift         # Real-time transcription
-  BuddyDictation*.swift     # Push-to-talk pipeline
-clicky-py/               # Python source — ClickyWin (Windows port)
-  clicky/                   # Package source
-  tests/                    # Test suite
+clicky-py/               # Python source
+  clicky/                   # Package
+    companion_manager.py      # Central state machine
+    ui/companion_widget.py    # Cursor-following overlay
+    clients/                  # LLM, transcription, TTS clients
+    knowledge_base.py         # Per-app KB with window title matching
+  tests/                    # 73 tests
   clicky.spec               # PyInstaller build spec
-  README.md                 # Windows-specific docs
-worker/                  # Cloudflare Worker proxy (shared by both platforms)
-  src/index.ts              # Three routes: /chat, /tts, /transcribe-token
-CLAUDE.md                # Full architecture doc (agents read this)
+worker/                   # Cloudflare Worker proxy
+  src/index.ts              # Routes: /chat, /tts, /transcribe-token
+docs/                     # PRDs and implementation plans
 ```
 
-## Contributing
+**State flow:** IDLE → LISTENING (Ctrl+Alt held) → PROCESSING (screenshots + Claude) → RESPONDING (TTS + cursor guidance) → IDLE
 
-PRs welcome. If you're using Claude Code, it already knows the codebase — just tell it what you want to build and point it at `CLAUDE.md`.
+## Tests
 
-Got feedback? DM Farza on X [@farzatv](https://x.com/farzatv).
+```bash
+cd clicky-py
+uv run pytest
+uv run ruff check .
+```
+
+## Credits
+
+ClickyWin is a community port of [Clicky](https://github.com/farzaa/clicky) by [Farza Majeed](https://x.com/FarzaTV). All credit for the original concept, UX design, companion cursor behavior, and the POINT tag protocol goes to Farza. The knowledge base system and Windows-specific adaptations are original to ClickyWin.
+
+## License
+
+MIT — see [clicky-py/LICENSE](clicky-py/LICENSE).
