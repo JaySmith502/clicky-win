@@ -326,6 +326,14 @@ class CompanionWidget(QWidget):
         self._cursor_timer.stop()
         super().hide()
 
+    def hide_for_capture(self) -> None:
+        """Temporarily hide during screen capture."""
+        self.setVisible(False)
+
+    def restore_after_capture(self) -> None:
+        """Restore after screen capture."""
+        self.setVisible(True)
+
     # ------------------------------------------------------------------
     # Cursor tracking
     # ------------------------------------------------------------------
