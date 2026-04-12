@@ -27,6 +27,8 @@ from clicky.config import Config
 from clicky.conversation_history import ConversationHistory
 from clicky.hotkey import HotkeyMonitor
 from clicky.mic_capture import MicCapture
+from clicky.point_mapper import map_point_to_screen
+from clicky.point_parser import parse_point_tag
 from clicky.prompts import COMPANION_VOICE_SYSTEM_PROMPT
 from clicky.screen_capture import ScreenshotImage
 from clicky.state import VoiceState
@@ -43,6 +45,10 @@ class CaptureVisibilityController(Protocol):
 
     def restore_after_capture(self) -> None:
         """Restore after screen capture."""
+        ...
+
+    def fly_to(self, x: int, y: int) -> None:
+        """Animate companion to target screen position."""
         ...
 
 
@@ -93,6 +99,7 @@ class CompanionManager(QObject):
         self._history = ConversationHistory()
         self._current_model: str = config.default_model
         self._cancel_flag: bool = False
+        self._current_screenshots: list[ScreenshotImage] = []
         self._speak_task: asyncio.Task[None] | None = None
 
         # PCM deque bridge — same pattern as app.py.  Replaced on every
@@ -299,6 +306,7 @@ class CompanionManager(QObject):
             await asyncio.sleep(0.05)
             try:
                 screenshots = await asyncio.to_thread(self._screen_capture_fn)
+                self._current_screenshots = screenshots
             finally:
                 self._panel_visibility_controller.restore_after_capture()
 
@@ -339,7 +347,19 @@ class CompanionManager(QObject):
                 self._history.append(text, full_text)
                 self.response_complete.emit(full_text)
                 self.success_turn_completed.emit()
-                self._speak_task = asyncio.ensure_future(self._speak(full_text))
+
+                # Parse POINT tag — strip from TTS text, fly companion if found.
+                spoken_text, point_tag = parse_point_tag(full_text)
+                if point_tag is not None:
+                    coords = map_point_to_screen(point_tag, self._current_screenshots)
+                    if coords is not None:
+                        self._panel_visibility_controller.fly_to(coords[0], coords[1])
+                        logger.info(
+                            "POINT: (%d, %d) label=%s",
+                            coords[0], coords[1], point_tag.label,
+                        )
+
+                self._speak_task = asyncio.ensure_future(self._speak(spoken_text))
 
         except asyncio.CancelledError:
             logger.debug("turn cancelled")

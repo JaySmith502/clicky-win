@@ -337,6 +337,10 @@ class CompanionWidget(QWidget):
         """Restore after screen capture."""
         self.setVisible(True)
 
+    def fly_to(self, x: int, y: int) -> None:
+        """Animate to target position. Stub — real animation in Slice 3."""
+        logger.info("fly_to: (%d, %d)", x, y)
+
     # ------------------------------------------------------------------
     # Cursor tracking
     # ------------------------------------------------------------------
