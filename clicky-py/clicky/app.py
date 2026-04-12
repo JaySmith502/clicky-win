@@ -28,6 +28,7 @@ from clicky.config import Config, ConfigError
 from clicky.hotkey import HotkeyMonitor
 from clicky.logging_config import configure_logging
 from clicky.mic_capture import MicCapture
+from clicky.output_capture import OutputCapture
 from clicky.screen_capture import capture_all
 from clicky.state import VoiceState
 from clicky.ui.companion_widget import CompanionWidget
@@ -129,10 +130,14 @@ def run() -> int:
         panel.banner.show_info(f"Press Ctrl+Alt to talk. Config at {result.config_path}")
 
     mic = MicCapture()
+    output_capture = OutputCapture()
 
     mic.audio_level.connect(panel.set_audio_level)
     mic.error.connect(lambda msg: logger.error("mic error: %s", msg))
     mic.error.connect(lambda msg: panel.permissions.set_mic_status(False))
+
+    # Output loopback → companion waveform during RESPONDING
+    output_capture.audio_level.connect(companion.set_output_level)
 
     def _toggle_panel() -> None:
         if panel.isVisible():
@@ -183,6 +188,15 @@ def run() -> int:
         manager.state_changed.connect(tray_icon.set_state)
         manager.state_changed.connect(companion.set_state)
 
+        # Start/stop output loopback capture based on state
+        def _manage_output_capture(state: VoiceState) -> None:
+            if state == VoiceState.RESPONDING:
+                output_capture.start()
+            else:
+                output_capture.stop()
+
+        manager.state_changed.connect(_manage_output_capture)
+
         # Audio level → panel waveform
         manager.audio_level.connect(panel.set_audio_level)
         manager.audio_level.connect(companion.set_audio_level)
@@ -210,10 +224,6 @@ def run() -> int:
         manager.success_turn_completed.connect(panel.banner.clear)
 
         # v1 panel auto-show disabled — companion widget handles state now.
-        # Panel still exists for migration but doesn't auto-appear.
-        # manager.state_changed.connect(
-        #     lambda state: panel.show_near_tray(tray_icon) if state == VoiceState.LISTENING else None
-        # )
 
     hotkey_monitor.start()
     tray_icon.show()
@@ -224,6 +234,7 @@ def run() -> int:
     # (pynput's helper thread is not always daemonic on Windows).
     result.app.aboutToQuit.connect(hotkey_monitor.stop)
     result.app.aboutToQuit.connect(companion.hide)
+    result.app.aboutToQuit.connect(output_capture.stop)
 
     if result.was_first_run:
         # Delay the first-run auto-show so the tray icon has time to be
