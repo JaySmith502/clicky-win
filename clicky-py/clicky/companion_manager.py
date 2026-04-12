@@ -20,16 +20,18 @@ from typing import Any, Protocol
 
 from PySide6.QtCore import QByteArray, QObject, Signal
 
+from clicky.active_window import get_foreground_window_title
 from clicky.clients.llm_client import LLMClient
 from clicky.clients.transcription_client import TranscriptionClient
 from clicky.clients.tts_client import TTSClient
 from clicky.config import Config
 from clicky.conversation_history import ConversationHistory
 from clicky.hotkey import HotkeyMonitor
+from clicky.knowledge_base import load_kb_from_disk, match_app, select_content
 from clicky.mic_capture import MicCapture
 from clicky.point_mapper import map_point_to_screen
 from clicky.point_parser import parse_point_tag
-from clicky.prompts import COMPANION_VOICE_SYSTEM_PROMPT
+from clicky.prompts import build_system_prompt
 from clicky.screen_capture import ScreenshotImage
 from clicky.state import VoiceState
 
@@ -97,6 +99,7 @@ class CompanionManager(QObject):
         self._state: VoiceState = VoiceState.IDLE
         self._current_task: asyncio.Task[None] | None = None
         self._history = ConversationHistory()
+        self._knowledge_dir = config.knowledge_dir  # Path | None
         self._current_model: str = config.default_model
         self._cancel_flag: bool = False
         self._current_screenshots: list[ScreenshotImage] = []
@@ -332,13 +335,29 @@ class CompanionManager(QObject):
                 current_images=image_blocks,
             )
 
+            # Detect active app and load KB
+            window_title = get_foreground_window_title()
+            kb_content = None
+            app_name = None
+            if self._knowledge_dir is not None:
+                apps = load_kb_from_disk(self._knowledge_dir)
+                matched = match_app(window_title, apps)
+                if matched is not None:
+                    app_name = matched.name
+                    kb_content = select_content(matched, text)
+                    logger.info("KB loaded: %s (%d chars)", app_name, len(kb_content))
+                else:
+                    logger.debug("no KB match for window: %s", window_title)
+
+            system_prompt = build_system_prompt(kb_content, app_name)
+
             # Transition to RESPONDING.
             self._set_state(VoiceState.RESPONDING)
 
             # Send to LLM.
             full_text = await self._llm.send(
                 messages,
-                system=COMPANION_VOICE_SYSTEM_PROMPT,
+                system=system_prompt,
                 model=self._current_model,
             )
 
