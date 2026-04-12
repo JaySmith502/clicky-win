@@ -1,11 +1,11 @@
 """System tray icon for ClickyWin.
 
-Holds the current VoiceState, rebuilds its icon via icon_factory whenever
-state changes, and exposes a toggle_panel_requested signal on left-click.
-Right-click menu has a single "Quit" action.
+Minimal tray: static icon, context menu with Settings / Show History / Quit.
 """
 
 from __future__ import annotations
+
+import logging
 
 from PySide6.QtCore import Signal
 from PySide6.QtGui import QAction
@@ -14,37 +14,38 @@ from PySide6.QtWidgets import QApplication, QMenu, QSystemTrayIcon
 from clicky.icon_factory import icon_for_state
 from clicky.state import VoiceState
 
+logger = logging.getLogger(__name__)
+
 
 class TrayIcon(QSystemTrayIcon):
-    """QSystemTrayIcon that reflects VoiceState via color-coded icons."""
+    """Static system tray icon with Settings / Show History / Quit menu."""
 
-    toggle_panel_requested = Signal()
+    show_history_requested = Signal()
+    show_settings_requested = Signal()
 
-    def __init__(self, initial_state: VoiceState = VoiceState.IDLE) -> None:
+    def __init__(self) -> None:
         super().__init__()
-        self._state = initial_state
-        self.setIcon(icon_for_state(self._state))
+        # Static idle icon — no state changes
+        self.setIcon(icon_for_state(VoiceState.IDLE))
         self.setToolTip("ClickyWin")
 
         menu = QMenu()
+
+        settings_action = QAction("Settings", menu)
+        settings_action.triggered.connect(lambda: self.show_settings_requested.emit())
+        menu.addAction(settings_action)
+
+        history_action = QAction("Show History", menu)
+        history_action.triggered.connect(lambda: self.show_history_requested.emit())
+        menu.addAction(history_action)
+
+        menu.addSeparator()
+
         quit_action = QAction("Quit", menu)
         quit_action.triggered.connect(self._on_quit)
         menu.addAction(quit_action)
-        self._menu = menu
+
         self.setContextMenu(menu)
-
-        self.activated.connect(self._on_activated)
-
-    def set_state(self, state: VoiceState) -> None:
-        """Update the tray icon to reflect a new VoiceState."""
-        if state == self._state:
-            return
-        self._state = state
-        self.setIcon(icon_for_state(state))
-
-    def _on_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
-        if reason == QSystemTrayIcon.ActivationReason.Trigger:
-            self.toggle_panel_requested.emit()
 
     def _on_quit(self) -> None:
         app = QApplication.instance()

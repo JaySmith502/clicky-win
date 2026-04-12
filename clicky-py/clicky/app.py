@@ -17,7 +17,6 @@ from pathlib import Path
 
 import qasync
 from platformdirs import user_config_dir, user_log_dir
-from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
 from clicky.clients.llm_client import LLMClient
@@ -32,6 +31,7 @@ from clicky.output_capture import OutputCapture
 from clicky.screen_capture import capture_all
 from clicky.state import VoiceState
 from clicky.ui.companion_widget import CompanionWidget
+from clicky.ui.history_window import HistoryWindow
 from clicky.ui.panel import Panel
 from clicky.ui.tray_icon import TrayIcon
 
@@ -115,9 +115,10 @@ def run() -> int:
     if result.config_error is not None:
         logger.warning("config error: %s", result.config_error)
 
-    tray_icon = TrayIcon(initial_state=VoiceState.IDLE)
+    tray_icon = TrayIcon()
     panel = Panel()
     companion = CompanionWidget()
+    history = HistoryWindow()
 
     if result.config_error is not None:
         panel.show_near_tray(tray_icon)
@@ -139,27 +140,18 @@ def run() -> int:
     # Output loopback → companion waveform during RESPONDING
     output_capture.audio_level.connect(companion.set_output_level)
 
-    def _toggle_panel() -> None:
-        if panel.isVisible():
-            panel.hide()
-        else:
-            panel.show_near_tray(tray_icon)
-
-    tray_icon.toggle_panel_requested.connect(_toggle_panel)
+    # Tray menu → settings / history
+    tray_icon.show_settings_requested.connect(
+        lambda: os.startfile(result.config_path)
+    )
+    tray_icon.show_history_requested.connect(history.show)
+    tray_icon.show_history_requested.connect(history.raise_)
 
     # ------------------------------------------------------------------
     # Hotkey monitor
     # ------------------------------------------------------------------
     hotkey_binding = result.config.hotkey if result.config is not None else "ctrl+alt"
     hotkey_monitor = HotkeyMonitor(binding=hotkey_binding)
-
-    def _on_escape_pressed() -> None:
-        # Only hide if the panel is visible — otherwise the Escape key
-        # has nothing to act on.
-        if panel.isVisible():
-            panel.hide()
-
-    hotkey_monitor.escape_pressed.connect(_on_escape_pressed)
 
     # ------------------------------------------------------------------
     # CompanionManager (only when config loaded successfully)
@@ -179,13 +171,8 @@ def run() -> int:
             panel_visibility_controller=panel,
         )
 
-        # Model picker → initial value + live changes
-        panel.model_picker.set_model(result.config.default_model)
-        panel.model_picker.model_changed.connect(manager.set_model)
-
-        # State → panel + tray
+        # State → panel + companion
         manager.state_changed.connect(panel.set_state)
-        manager.state_changed.connect(tray_icon.set_state)
         manager.state_changed.connect(companion.set_state)
 
         # Start/stop output loopback capture based on state
@@ -223,7 +210,16 @@ def run() -> int:
         manager.error.connect(companion.flash_error)
         manager.success_turn_completed.connect(panel.banner.clear)
 
-        # v1 panel auto-show disabled — companion widget handles state now.
+        # Transcription → history window
+        manager.interim_transcript.connect(history.append_interim)
+        manager.final_transcript.connect(history.set_final)
+
+        # LLM response → history window
+        manager.response_delta.connect(history.append_delta)
+        manager.response_complete.connect(history.commit_turn)
+
+        # Errors → history window
+        manager.error.connect(history.show_error)
 
     hotkey_monitor.start()
     tray_icon.show()
@@ -235,12 +231,6 @@ def run() -> int:
     result.app.aboutToQuit.connect(hotkey_monitor.stop)
     result.app.aboutToQuit.connect(companion.hide)
     result.app.aboutToQuit.connect(output_capture.stop)
-
-    if result.was_first_run:
-        # Delay the first-run auto-show so the tray icon has time to be
-        # laid out — otherwise tray_icon.geometry() returns an empty rect
-        # on Windows and the panel falls back to screen-centering.
-        QTimer.singleShot(100, lambda: panel.show_near_tray(tray_icon))
 
     # Use qasync to bridge the Qt event loop with asyncio so that
     # asyncio.create_task / ensure_future work inside Qt signal handlers.
