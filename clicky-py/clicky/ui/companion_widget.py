@@ -76,9 +76,23 @@ class CompanionWidget(QWidget):
         self._scale = 0.0       # 0.0 = idle, 1.0 = fully expanded (waveform visible)
         self._opacity = self.IDLE_OPACITY
 
+        self._frozen = False  # freeze cursor tracking during RESPONDING
+
         # Animation for waveform expand/contract
         self._scale_anim = QPropertyAnimation(self, b"anim_scale")
         self._opacity_anim = QPropertyAnimation(self, b"anim_opacity")
+
+        # Pulse animation for processing/responding states
+        self._pulse_scale = 1.0
+        self._pulse_color: str | None = None
+        self._pulse_anim = QPropertyAnimation(self, b"anim_pulse")
+
+        # Error flash timer
+        self._error_timer = QTimer(self)
+        self._error_timer.setSingleShot(True)
+        self._error_timer.setInterval(1000)  # 1 second red flash
+        self._error_timer.timeout.connect(self._end_error_flash)
+        self._error_flash = False
 
         self._cursor_timer = QTimer(self)
         self._cursor_timer.setInterval(self.TRACK_INTERVAL_MS)
@@ -106,6 +120,15 @@ class CompanionWidget(QWidget):
 
     anim_opacity = Property(float, _get_anim_opacity, _set_anim_opacity)
 
+    def _get_anim_pulse(self) -> float:
+        return self._pulse_scale
+
+    def _set_anim_pulse(self, val: float) -> None:
+        self._pulse_scale = val
+        self.update()
+
+    anim_pulse = Property(float, _get_anim_pulse, _set_anim_pulse)
+
     # ------------------------------------------------------------------
     # State management
     # ------------------------------------------------------------------
@@ -113,15 +136,20 @@ class CompanionWidget(QWidget):
     def set_state(self, state: VoiceState) -> None:
         if state == self._state:
             return
-        prev = self._state
         self._state = state
 
         if state == VoiceState.LISTENING:
+            self._frozen = False
+            self._stop_pulse()
             self._animate_expand()
-        elif (
-            (prev == VoiceState.LISTENING and state == VoiceState.IDLE)
-            or state == VoiceState.IDLE
-        ):
+        elif state == VoiceState.PROCESSING:
+            self._animate_to_pulse()
+        elif state == VoiceState.RESPONDING:
+            self._frozen = True  # freeze position during TTS
+            self._start_pulse(DS.Colors.companion_responding)
+        elif state == VoiceState.IDLE:
+            self._frozen = False
+            self._stop_pulse()
             self._animate_contract()
 
         self.update()
@@ -168,6 +196,61 @@ class CompanionWidget(QWidget):
         self._opacity_anim.start()
 
     # ------------------------------------------------------------------
+    # Error flash
+    # ------------------------------------------------------------------
+
+    def flash_error(self, _msg: str = "") -> None:
+        """Brief red flash on error, then return to current state."""
+        self._error_flash = True
+        self._error_timer.start()
+        self.update()
+
+    def _end_error_flash(self) -> None:
+        self._error_flash = False
+        self.update()
+
+    # ------------------------------------------------------------------
+    # Pulse animation helpers
+    # ------------------------------------------------------------------
+
+    def _animate_to_pulse(self) -> None:
+        """Transition from waveform to pulsing dot (processing)."""
+        # Contract waveform
+        self._scale_anim.stop()
+        self._scale_anim.setStartValue(self._scale)
+        self._scale_anim.setEndValue(0.3)  # small dot, not fully contracted
+        self._scale_anim.setDuration(200)
+        self._scale_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._scale_anim.start()
+
+        # Keep full opacity
+        self._opacity_anim.stop()
+        self._opacity_anim.setStartValue(self._opacity)
+        self._opacity_anim.setEndValue(1.0)
+        self._opacity_anim.setDuration(200)
+        self._opacity_anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+        self._opacity_anim.start()
+
+        self._start_pulse(DS.Colors.companion_processing)
+
+    def _start_pulse(self, color_hex: str) -> None:
+        """Start looping pulse animation."""
+        self._pulse_color = color_hex
+        self._pulse_anim.stop()
+        self._pulse_anim.setStartValue(0.8)
+        self._pulse_anim.setEndValue(1.2)
+        self._pulse_anim.setDuration(600)
+        self._pulse_anim.setEasingCurve(QEasingCurve.Type.InOutSine)
+        self._pulse_anim.setLoopCount(-1)  # infinite loop
+        self._pulse_anim.start()
+
+    def _stop_pulse(self) -> None:
+        """Stop pulse animation."""
+        self._pulse_anim.stop()
+        self._pulse_scale = 1.0
+        self._pulse_color = None
+
+    # ------------------------------------------------------------------
     # Visibility
     # ------------------------------------------------------------------
 
@@ -187,6 +270,8 @@ class CompanionWidget(QWidget):
 
     def _track_cursor(self, force: bool = False) -> None:
         pos = QCursor.pos()  # Global screen coordinates
+        if self._frozen:
+            return
         cx, cy = pos.x(), pos.y()
 
         if not force and not should_update(self._prev_x, self._prev_y, cx, cy):
@@ -220,33 +305,47 @@ class CompanionWidget(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        # Interpolate triangle size based on scale
-        size_delta = self.ACTIVE_TRIANGLE_SIZE - self.TRIANGLE_SIZE
-        tri_size = self.TRIANGLE_SIZE + size_delta * self._scale
+        # Determine color
+        if self._error_flash:
+            base_color = DS.Colors.companion_error
+        elif self._pulse_color:
+            base_color = self._pulse_color
+        elif self._state == VoiceState.LISTENING:
+            base_color = DS.Colors.companion_listening
+        else:
+            base_color = DS.Colors.companion_idle
 
-        # Color based on state
-        color = QColor(DS.Colors.companion_idle)
+        color = QColor(base_color)
         color.setAlphaF(self._opacity)
-        painter.setBrush(color)
         painter.setPen(Qt.PenStyle.NoPen)
 
-        # Draw triangle pointing right, vertically centered
-        h = tri_size
-        w = h * 0.866
         cy = self.WIDGET_H / 2
 
-        triangle = QPolygonF(
-            [
-                QPointF(0, cy - h / 2),
-                QPointF(w, cy),
-                QPointF(0, cy + h / 2),
-            ]
-        )
-        painter.drawPolygon(triangle)
+        if self._state in (VoiceState.PROCESSING, VoiceState.RESPONDING) and not self._error_flash:
+            # Pulsing dot
+            radius = 8 * self._pulse_scale
+            painter.setBrush(color)
+            painter.drawEllipse(QPointF(radius + 2, cy), radius, radius)
+        else:
+            # Triangle (idle or listening)
+            size_delta = self.ACTIVE_TRIANGLE_SIZE - self.TRIANGLE_SIZE
+            tri_size = self.TRIANGLE_SIZE + size_delta * self._scale
 
-        # Draw waveform bars when scale > 0
-        if self._scale > 0.01:
-            self._paint_waveform(painter, tri_offset=w + 4, cy=cy)
+            painter.setBrush(color)
+            h = tri_size
+            w = h * 0.866
+            triangle = QPolygonF(
+                [
+                    QPointF(0, cy - h / 2),
+                    QPointF(w, cy),
+                    QPointF(0, cy + h / 2),
+                ]
+            )
+            painter.drawPolygon(triangle)
+
+            # Waveform bars when listening
+            if self._scale > 0.01 and self._state == VoiceState.LISTENING:
+                self._paint_waveform(painter, tri_offset=w + 4, cy=cy)
 
         painter.end()
 
