@@ -14,6 +14,8 @@ dependencies = [
     "pillow>=10.0",
     "platformdirs>=4.0",
     "qasync>=0.27",
+    "pycaw>=20251023",
+    "comtypes>=1.4.16",
 ]
 
 [dependency-groups]

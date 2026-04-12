@@ -73,6 +73,7 @@ class CompanionWidget(QWidget):
 
         self._state = VoiceState.IDLE
         self._audio_level = 0.0
+        self._output_level = 0.0  # system audio output level for responding waveform
         self._scale = 0.0       # 0.0 = idle, 1.0 = fully expanded (waveform visible)
         self._opacity = self.IDLE_OPACITY
 
@@ -157,6 +158,11 @@ class CompanionWidget(QWidget):
     def set_audio_level(self, level: float) -> None:
         self._audio_level = level
         if self._state == VoiceState.LISTENING:
+            self.update()
+
+    def set_output_level(self, level: float) -> None:
+        self._output_level = level
+        if self._state == VoiceState.RESPONDING:
             self.update()
 
     # ------------------------------------------------------------------
@@ -390,13 +396,18 @@ class CompanionWidget(QWidget):
             x += bar_w + self.WAVEFORM_GAP
 
     def _paint_breathing_waveform(self, painter: QPainter, tri_offset: float, cy: float) -> None:
-        """Paint breathing diamond waveform for RESPONDING state (pulse-driven, not mic)."""
-        # Use pulse_scale (0.8–1.2) as a synthetic "level" for gentle breathing
-        synthetic_level = (self._pulse_scale - 0.8) / 0.4  # normalize to 0.0–1.0
-        synthetic_level = max(0.3, min(1.0, synthetic_level))  # floor at 0.3 so bars stay visible
+        """Paint diamond waveform for RESPONDING state driven by system audio output."""
+        # Use real output level if available, fall back to pulse breathing
+        # Output level is already 0.0–1.0 peak from Windows audio meter (no gain needed)
+        if self._output_level > 0.005:
+            level = min(1.0, self._output_level)
+        else:
+            # Fallback: gentle breathing from pulse animation
+            synthetic = (self._pulse_scale - 0.8) / 0.4
+            level = max(0.3, min(1.0, synthetic))
 
         bar_heights = compute_bar_heights(
-            synthetic_level, self.WAVEFORM_MAX_HEIGHT, self.WAVEFORM_MIN_HEIGHT
+            level, self.WAVEFORM_MAX_HEIGHT, self.WAVEFORM_MIN_HEIGHT
         )
 
         total_bar_width = self.WAVEFORM_WIDTH - (self.WAVEFORM_GAP * (self.WAVEFORM_BAR_COUNT - 1))
