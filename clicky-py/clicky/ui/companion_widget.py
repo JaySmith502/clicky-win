@@ -265,10 +265,13 @@ class CompanionWidget(QWidget):
     # Visibility
     # ------------------------------------------------------------------
 
-    def show(self) -> None:
-        super().show()
+    def showEvent(self, event) -> None:  # noqa: ARG002
+        """Reapply DWM transparency on every show — Windows resets it."""
         if sys.platform == "win32":
             self._force_transparent_window()
+
+    def show(self) -> None:
+        super().show()
         # Initialize position immediately
         self._track_cursor(force=True)
         self._cursor_timer.start()
