@@ -1,4 +1,7 @@
-# Hi, this is Clicky.
+# Clicky — an AI buddy that lives next to your cursor
+
+> **Looking for the Windows version?** See [ClickyWin](clicky-py/README.md) — a Python + PySide6 port with cursor guidance, knowledge base injection, and real-time output waveform.
+
 It's an AI teacher that lives as a buddy next to your cursor. It can see your screen, talk to you, and even point at stuff. Kinda like having a real teacher next to you.
 
 Download it [here](https://www.clicky.so/) for free.
@@ -27,7 +30,7 @@ Help me set up everything — the Cloudflare Worker with my own API keys, the pr
 
 That's it. It'll clone the repo, read the docs, and walk you through the whole setup. Once you're running you can just keep talking to it — build features, fix bugs, whatever. Go crazy.
 
-## Manual setup
+## Manual setup (macOS)
 
 If you want to do it yourself, here's the deal.
 
@@ -123,6 +126,10 @@ The app will appear in your menu bar (not the dock). Click the icon to open the 
 - **Screen Recording** — for taking screenshots when you use the hotkey
 - **Screen Content** — for ScreenCaptureKit access
 
+## Windows setup
+
+See [clicky-py/README.md](clicky-py/README.md) for full Windows installation instructions, build guide, and knowledge base setup.
+
 ## Architecture
 
 If you want the full technical breakdown, read `CLAUDE.md`. But here's the short version:
@@ -132,7 +139,7 @@ If you want the full technical breakdown, read `CLAUDE.md`. But here's the short
 ## Project structure
 
 ```
-leanring-buddy/          # Swift source (yes, the typo stays)
+leanring-buddy/          # Swift source — original macOS Clicky
   CompanionManager.swift    # Central state machine
   CompanionPanelView.swift  # Menu bar panel UI
   ClaudeAPI.swift           # Claude streaming client
@@ -140,7 +147,12 @@ leanring-buddy/          # Swift source (yes, the typo stays)
   OverlayWindow.swift       # Blue cursor overlay
   AssemblyAI*.swift         # Real-time transcription
   BuddyDictation*.swift     # Push-to-talk pipeline
-worker/                  # Cloudflare Worker proxy
+clicky-py/               # Python source — ClickyWin (Windows port)
+  clicky/                   # Package source
+  tests/                    # Test suite
+  clicky.spec               # PyInstaller build spec
+  README.md                 # Windows-specific docs
+worker/                  # Cloudflare Worker proxy (shared by both platforms)
   src/index.ts              # Three routes: /chat, /tts, /transcribe-token
 CLAUDE.md                # Full architecture doc (agents read this)
 ```
@@ -149,4 +161,4 @@ CLAUDE.md                # Full architecture doc (agents read this)
 
 PRs welcome. If you're using Claude Code, it already knows the codebase — just tell it what you want to build and point it at `CLAUDE.md`.
 
-Got feedback? DM me on X [@farzatv](https://x.com/farzatv).
+Got feedback? DM Farza on X [@farzatv](https://x.com/farzatv).
