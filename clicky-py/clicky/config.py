@@ -32,6 +32,7 @@ class Config:
     hotkey: str
     default_model: str
     log_level: str
+    knowledge_dir: Path | None
 
     @classmethod
     def from_path(cls, path: Path) -> Config:
@@ -71,11 +72,24 @@ class Config:
                 f"log_level must be one of {sorted(ALLOWED_LOG_LEVELS)}, got {log_level!r}"
             )
 
+        knowledge_dir_raw = data.get("knowledge_dir")
+        if isinstance(knowledge_dir_raw, str) and knowledge_dir_raw.strip():
+            knowledge_dir = Path(knowledge_dir_raw)
+        else:
+            # Default: %APPDATA%/ClickyWin/knowledge/
+            # Use the same config dir parent (path.parent = %APPDATA%/ClickyWin/)
+            knowledge_dir = path.parent / "knowledge"
+
+        # None if directory doesn't exist — no error
+        if not knowledge_dir.is_dir():
+            knowledge_dir = None
+
         return cls(
             worker_url=worker_url,
             hotkey=hotkey,
             default_model=default_model,
             log_level=log_level,
+            knowledge_dir=knowledge_dir,
         )
 
     @staticmethod

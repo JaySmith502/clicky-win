@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import logging
+import tomllib
 from dataclasses import dataclass, field
+from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -100,3 +105,56 @@ def select_content(
             remaining -= size
 
     return "\n\n".join(parts)
+
+
+def load_kb_from_disk(knowledge_dir: Path) -> list[KBApp]:
+    """Scan knowledge_dir for app KB folders. Returns list of KBApp.
+
+    Each subfolder must contain _meta.toml with 'name' and 'window_titles'.
+    overview.md (if present) becomes the overview. All other .md files are sections.
+    Folders without _meta.toml are silently skipped.
+    """
+    apps: list[KBApp] = []
+    if not knowledge_dir.is_dir():
+        return apps
+
+    for subdir in sorted(knowledge_dir.iterdir()):
+        if not subdir.is_dir():
+            continue
+        meta_path = subdir / "_meta.toml"
+        if not meta_path.exists():
+            continue
+
+        try:
+            meta = tomllib.loads(meta_path.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            logger.warning("skipping %s: invalid _meta.toml", subdir.name)
+            continue
+
+        name = meta.get("name", subdir.name)
+        window_titles = meta.get("window_titles", [])
+        if not isinstance(window_titles, list):
+            continue
+
+        # Read overview.md
+        overview_path = subdir / "overview.md"
+        overview = ""
+        if overview_path.exists():
+            overview = overview_path.read_text(encoding="utf-8")
+
+        # Read all other .md files as sections
+        sections: list[tuple[str, str]] = []
+        for md_file in sorted(subdir.glob("*.md")):
+            if md_file.name == "overview.md":
+                continue
+            content = md_file.read_text(encoding="utf-8")
+            sections.append((md_file.name, content))
+
+        apps.append(KBApp(
+            name=name,
+            window_titles=window_titles,
+            overview=overview,
+            sections=sections,
+        ))
+
+    return apps
