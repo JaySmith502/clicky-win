@@ -22,6 +22,9 @@ class ScreenshotImage:
     display_height_px: int
     image_width_px: int
     image_height_px: int
+    scale: float           # downscale ratio (e.g. 0.667 for 1920→1280). 1.0 if no downscale.
+    monitor_left: int      # global X origin of this monitor
+    monitor_top: int       # global Y origin of this monitor
 
 
 def compose_screen_label(
@@ -86,6 +89,8 @@ def capture_all() -> list[ScreenshotImage]:
                 new_w = int(display_w * scale)
                 new_h = int(display_h * scale)
                 img = img.resize((new_w, new_h), Image.LANCZOS)
+            else:
+                scale = 1.0
 
             image_w, image_h = img.size
 
@@ -104,6 +109,9 @@ def capture_all() -> list[ScreenshotImage]:
                     display_height_px=display_h,
                     image_width_px=image_w,
                     image_height_px=image_h,
+                    scale=scale,
+                    monitor_left=mon["left"],
+                    monitor_top=mon["top"],
                 )
             )
 
