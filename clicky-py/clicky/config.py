@@ -18,7 +18,7 @@ PLACEHOLDER_WORKER_URL = "https://clicky-win-proxy.your-subdomain.workers.dev"
 # deferred to v2 because it requires a suppressing hook to swallow the
 # lock-toggle side effect, which contradicts our "never swallow keys" rule.
 ALLOWED_HOTKEYS = {"ctrl+alt", "right_ctrl"}
-ALLOWED_MODELS = {"claude-sonnet-4-6", "claude-opus-4-6"}
+ALLOWED_MODELS = {"gemini-2.5-flash", "gemini-2.5-pro"}
 ALLOWED_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR"}
 
 
@@ -60,7 +60,7 @@ class Config:
                 f"hotkey must be one of {sorted(ALLOWED_HOTKEYS)}, got {hotkey!r}"
             )
 
-        default_model = data.get("default_model", "claude-sonnet-4-6")
+        default_model = data.get("default_model", "gemini-2.5-flash")
         if default_model not in ALLOWED_MODELS:
             raise ConfigError(
                 f"default_model must be one of {sorted(ALLOWED_MODELS)}, got {default_model!r}"
