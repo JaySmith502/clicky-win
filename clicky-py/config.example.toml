@@ -9,10 +9,10 @@ worker_url = "https://clicky-win-proxy.your-subdomain.workers.dev"
 # (useful for international keyboards where Ctrl+Alt conflicts with AltGr).
 hotkey = "ctrl+alt"
 
-# Default Claude model. Options: "claude-sonnet-4-6" (fast, cheap),
-# "claude-opus-4-6" (slower, smarter). Switchable at runtime via the
+# Default Gemini model. Options: "gemini-2.5-flash" (fast, cheap),
+# "gemini-2.5-pro" (slower, smarter). Switchable at runtime via the
 # model picker in the panel.
-default_model = "claude-sonnet-4-6"
+default_model = "gemini-2.5-flash"
 
 # Log verbosity. Options: "DEBUG", "INFO", "WARNING", "ERROR".
 log_level = "INFO"

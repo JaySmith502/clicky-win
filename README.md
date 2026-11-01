@@ -2,7 +2,7 @@
 
 **A voice-powered AI tutor for Windows that watches your screen, answers your questions, and points at what it's talking about.**
 
-ClickyWin is a Windows port of [Farza's Clicky](https://github.com/farzaa/clicky) — the open-source AI companion that lives next to your cursor. Hold Ctrl+Alt to talk, release to get a spoken answer from Claude. The companion cursor flies to UI elements it references, so you always know exactly what it's describing.
+ClickyWin is a Windows port of [Farza's Clicky](https://github.com/farzaa/clicky) — the open-source AI companion that lives next to your cursor. Hold Ctrl+Alt to talk, release to get a spoken answer.
 
 Built for Windows developers, creatives, and anyone learning unfamiliar software by doing instead of watching tutorials.
 
@@ -11,17 +11,17 @@ Built for Windows developers, creatives, and anyone learning unfamiliar software
 1. Launch ClickyWin. A small blue triangle appears near your cursor.
 2. Open whatever software you're learning — DaVinci Resolve, Blender, Wild Apricot, anything.
 3. Hold **Ctrl+Alt** and ask your question out loud.
-4. Release. ClickyWin screenshots your screen(s), sends them to Claude along with your transcribed speech, and speaks the answer back to you.
-5. The companion cursor flies to the UI element Claude is describing, so your eyes go right to it.
+4. Release. ClickyWin screenshots your screen(s), sends them to Gemini along with your transcribed speech, and speaks the answer back to you.
+5. The companion cursor flies to the UI element Gemini is describing, so your eyes go right to it.
 6. Follow up with another question — ClickyWin remembers the conversation.
 
 ## Features
 
 - **Push-to-talk voice input** via Ctrl+Alt with live waveform visualization
-- **Multi-monitor screen capture** sent to Claude for visual context
+- **Multi-monitor screen capture** sent to Gemini for visual context
 - **Text-to-speech responses** via ElevenLabs with real-time output waveform
-- **Cursor guidance** — companion flies to UI elements Claude references
-- **Knowledge base injection** — curated markdown docs loaded per-app based on active window, so Claude gives authoritative answers for niche software
+- **Cursor guidance** — companion flies to UI elements Gemini references
+- **Knowledge base injection** — curated markdown docs loaded per-app based on active window, so Gemini gives authoritative answers for niche software
 - **Conversation memory** — 20-turn history so follow-up questions have full context
 - **Interrupt support** — press Ctrl+Alt mid-response to cut the audio and ask something new
 - **History window** — optional scrollable transcript accessible from the tray menu
@@ -34,7 +34,7 @@ Built for Windows developers, creatives, and anyone learning unfamiliar software
 - **Node.js 18+** — for deploying the Cloudflare Worker
 - **Cloudflare account** (free tier) — [sign up](https://dash.cloudflare.com/sign-up)
 - **API keys:**
-  - [Anthropic](https://console.anthropic.com) (Claude)
+  - [Google AI Studio / Gemini](https://aistudio.google.com/) (vision + chat model)
   - [AssemblyAI](https://www.assemblyai.com) (speech-to-text)
   - [ElevenLabs](https://elevenlabs.io) (text-to-speech)
 
@@ -55,7 +55,7 @@ The Worker is a tiny proxy that holds your API keys. The app talks to the Worker
 ```bash
 cd ../worker
 npm install
-npx wrangler secret put ANTHROPIC_API_KEY
+npx wrangler secret put GEMINI_API_KEY
 npx wrangler secret put ASSEMBLYAI_API_KEY
 npx wrangler secret put ELEVENLABS_API_KEY
 npx wrangler deploy
@@ -100,67 +100,17 @@ Edit `%APPDATA%\ClickyWin\config.toml`:
 |-------|---------|-------------|
 | `worker_url` | *(required)* | Your deployed Cloudflare Worker URL |
 | `hotkey` | `ctrl+alt` | Push-to-talk binding. Also supports `right_ctrl` |
-| `default_model` | `claude-sonnet-4-6` | Claude model for responses |
+| `default_model` | `gemini-2.5-flash` | Gemini model for responses |
 | `log_level` | `INFO` | DEBUG, INFO, WARNING, or ERROR |
 | `knowledge_dir` | `%APPDATA%/ClickyWin/knowledge/` | Path to knowledge base folder |
 
 ## Knowledge base
 
-ClickyWin can inject curated documentation into Claude's context based on which app is in the foreground. This turns it from a general-purpose assistant into an expert trainer for specific software.
-
-### Setting up a KB
-
-Create a folder per app inside your knowledge directory:
-
-```
-%APPDATA%/ClickyWin/knowledge/
-  └── wild_apricot/
-      ├── _meta.toml      # maps window titles to this KB
-      ├── overview.md      # always included — app overview
-      ├── events.md        # topic-specific docs
-      ├── membership.md
-      └── email.md
-```
-
-The `_meta.toml` file tells ClickyWin when to load this KB:
-
-```toml
-name = "Wild Apricot"
-window_titles = ["Wild Apricot", "wildapricot.org"]
-```
-
-When the foreground window title contains any of the `window_titles` strings, all markdown files in that folder are injected into Claude's system prompt as authoritative reference documentation.
-
-### Authoring KB content
-
-Any source of markdown works. We recommend [NotebookLM](https://notebooklm.google.com/) for distilling large doc sets:
-
-1. Upload the software's documentation, help articles, or video transcripts to NotebookLM
-2. Ask it to produce focused markdown per topic area
-3. Drop the `.md` files into the app's KB folder
-4. Write a `_meta.toml` with window title matchers
-
-No restart required — ClickyWin loads KB content fresh on every turn.
+ClickyWin can inject curated documentation into Gemini's context based on which app is in the foreground. This turns it from a general-purpose assistant into an expert trainer for specific software.
 
 ## Architecture
 
 Python + PySide6 system tray app using asyncio (via qasync). All three APIs are proxied through a shared Cloudflare Worker.
-
-```
-clicky-py/               # Python source
-  clicky/                   # Package
-    companion_manager.py      # Central state machine
-    ui/companion_widget.py    # Cursor-following overlay
-    clients/                  # LLM, transcription, TTS clients
-    knowledge_base.py         # Per-app KB with window title matching
-  tests/                    # 73 tests
-  clicky.spec               # PyInstaller build spec
-worker/                   # Cloudflare Worker proxy
-  src/index.ts              # Routes: /chat, /tts, /transcribe-token
-docs/                     # PRDs and implementation plans
-```
-
-**State flow:** IDLE → LISTENING (Ctrl+Alt held) → PROCESSING (screenshots + Claude) → RESPONDING (TTS + cursor guidance) → IDLE
 
 ## Tests
 
@@ -169,11 +119,3 @@ cd clicky-py
 uv run pytest
 uv run ruff check .
 ```
-
-## Credits
-
-ClickyWin is a community port of [Clicky](https://github.com/farzaa/clicky) by [Farza Majeed](https://x.com/FarzaTV). All credit for the original concept, UX design, companion cursor behavior, and the POINT tag protocol goes to Farza. The knowledge base system and Windows-specific adaptations are original to ClickyWin.
-
-## License
-
-MIT — see [clicky-py/LICENSE](clicky-py/LICENSE).
